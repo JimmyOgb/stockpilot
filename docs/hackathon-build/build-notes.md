@@ -1,77 +1,88 @@
-# StockPilot — Technical Build Notes
+# StockPilot — Technical Build Notes & Implementation Roadmap
 
-> **BNB Hack: Tokenized Stocks Edition**  
-> Technical decisions, documentation audit results, and zero-mock implementation guidelines.
-
----
-
-## 1. Verified Binance Web3 API Findings
-
-Following official documentation research on `https://web3.binance.com/build`:
-
-1. **Authentication Requirements**:
-   - `X-OC-APIKEY`: Web3 API Key.
-   - `X-OC-TIMESTAMP`: Current UTC ISO 8601 string with milliseconds. Must fall within ±5,000 ms.
-   - `X-OC-SIGN`: Base64-encoded HMAC-SHA256 (or Ed25519) signature.
-2. **Supported Token Discovery**:
-   - `GET /api/v1/dex/market/token/search`
-   - `POST /api/v1/dex/market/token/basic-info`
-3. **Real-Time Price Feeds**:
-   - `POST /api/v1/dex/market/price` (batch query up to 100 assets).
-4. **Wallet Balances**:
-   - `POST /api/v1/dex/balance/token-balances-by-address`
-   - `GET /api/v1/dex/balance/all-token-balances-by-address`
-   - Direct BSC RPC `eth_call` (`balanceOf`) for redundant on-chain verification.
-5. **DEX Aggregator Quotes**:
-   - `GET /api/v1/dex/aggregator/quote`
-   - Returns `executionMode`: `"SWAP"` (regular DeFi tokens) or `"RFQ"` (tokenized stocks & RWAs).
-6. **Execution Pipeline for Tokenized Equities**:
-   - Step 1: `GET /api/v1/dex/aggregator/swap` returns `rfq.typedDataToSign` (EIP-712).
-   - Step 2: Must be signed by the user's wallet within **30 seconds** (`40401 QUOTE_EXPIRED` if late).
-   - Step 3: `POST /api/v1/dex/aggregator/order/submit` with idempotency UUID.
-   - Step 4: `GET /api/v1/dex/aggregator/order/{orderId}` to poll settlement status.
-7. **Rate Limits**:
-   - Returns HTTP 429 with error code `42900`.
-   - Client must respect `Retry-After` header. Agentic wallet limits observed at 30 calls/hr.
-8. **Transaction Simulation**:
-   - `POST /api/v1/transaction/simulate` available for testing execution gas and pre-validating transactions.
+> **BNB Hack: Tokenized Stocks Edition** (Sep 16 – Oct 11, 2026)  
+> **Target Network**: BNB Smart Chain (BSC Mainnet — Chain ID: 56)  
+> **Core Asset**: `bNVDA` (Backed NVIDIA — `0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495`) & `USDC` (`0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d`)  
+> **Status**: Track Specification & Architecture Realignment Complete  
 
 ---
 
-## 2. Verified Tokenized Stock Assets on BSC Mainnet
+## 1. Verified Architecture & Design Decisions
 
-- **bNVDA (Backed NVIDIA)**:
-  - Contract: `0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495`
-  - Decimals: `18`
-  - Underlying: NVIDIA Corp (1:1 collateralized tracker certificate issued by Backed Finance).
-  - Trading Mode: Subject to RFQ market hours (`40369` error if market closed).
-- **USDC (Counter-Asset)**:
-  - Contract: `0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d`
-  - Decimals: `18`
-- **USDY (Ondo US Dollar Yield - Alternative RWA)**:
-  - Contract: `0x608593d17A2decBbc4399e4185bE4922F97eD32E`
-  - Decimals: `18`
+### 1.1 Decision Pipeline Separation
+The pipeline enforces zero ambiguity across layers:
+1. **StockPilot Engine**: Pure deterministic calculations (portfolio weights, drift, spread intelligence, proposed rebalance delta).
+2. **GenLayer Gate**: Independent cryptographic verification of proposed rebalance rules. **Never executes trades**.
+3. **Binance Simulation**: Preflight simulation (`/api/v1/transaction/simulate` or `baw preflight`) verifying no reverts and estimating gas before signing. **Failed simulation halts execution**.
+4. **Agentic Wallet / Trading**: Policy guardrails (daily limits) and EIP-712 typed-data signing for RFQ orders. **Does not evaluate strategy validity**.
+5. **BSC Mainnet**: Decentralized on-chain settlement.
+
+### 1.2 On-Chain vs. Reference Price Intelligence
+- Formula:
+  $$\text{spread} = \frac{\text{onchainPrice} - \text{referencePrice}}{\text{referencePrice}}$$
+- Sourced directly from Binance RWA Data API (`/api/v1/dex/market/rwa/price` and `/underlying-market-data`).
+- Only calculated when both feeds are valid and active; otherwise displays `—`.
+- Integrated as a first-class risk check in `src/strategy/risk-engine.ts` (e.g. `maxSpreadBps` to prevent buying when on-chain price trades at excessive premium).
+
+### 1.3 Authoritative Market Status
+- Sourced from official Binance endpoints (verified in `binance-tokenized-securities-info`):
+  - Overall: `GET https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/market/token/rwa/market/status/ai`
+  - Asset: `GET https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/market/token/rwa/asset/market/status/ai?chainId=56&contractAddress=...`
+- Status classifications: `open` (`regular`, `premarket`, `postmarket`, `overnight`), `closed`, `paused`, `halted`, `unavailable`, `unknown`.
+- Never inferred from hardcoded calendars.
+
+### 1.4 Division of Duties: REST API vs. Agentic Wallet Skills
+- **Direct Web3 REST API (`src/binance/`)**: Background programmatic polling, market data, balance fetching, drift calculation, quote fetching, preflight simulation.
+- **Agentic Wallet Skills (`.agents/skills/`)**:
+  - `binance-tokenized-securities-info`: RWA metadata, attestation, session status.
+  - `binance-agentic-wallet`: User policy guardrails (spending limits, token whitelists), EIP-712 signing for RFQ orders (`baw sign-message`).
+- **BNB Agent Studio**: Persistent autonomous agent scheduling and event orchestration.
 
 ---
 
-## 3. Market State & Slippage Architectural Decoupling
+## 2. Updated Implementation Roadmap
 
-### 3.1 Pluggable Market State Provider
-- Traditional US market hours (09:30–16:00 ET, Mon–Fri) cannot be assumed as authoritative exchange status for all tokenized products without an explicit calendar feed.
-- Binance Web3 API does not expose a standalone `GET /market-hours` endpoint, but emits errors `40369` (BStock) and `40367` (Ondo) when orders are submitted out-of-session.
-- **Architectural Decision**: Created `IMarketStateProvider` adapter interface. The application uses a configurable calendar adapter by default and is ready to ingest live calendar APIs or react directly to Binance API session halt responses.
+```mermaid
+flowchart LR
+    M1[Phase 1: Foundation\nAuth, Signer, Math\nCOMPLETED] --> M2[Phase 2: Live Telemetry\nRWA Client & Wallet Client\nNEXT]
+    M2 --> M3[Phase 3: Verification & Simulation\nGenLayer & Binance Simulation\nPLANNED]
+    M3 --> M4[Phase 4: Execution & Agent\nAgentic Wallet & BNB Agent Studio\nPLANNED]
+    M4 --> M5[Phase 5: Final Polish\nZero-Mock Dashboard & DevEx Log\nPLANNED]
+```
 
-### 3.2 Slippage & Risk Bounds as StockPilot Safety Policies
-- Slippage limits (e.g. 50 bps during normal hours, 25 bps during closed hours) are **StockPilot application safety policies** configured by the operator/user to protect against price impact, rather than intrinsic exchange rules.
+### Phase 1: Foundation & Core Signer (COMPLETED)
+- [x] Zero-mock strategy and deterministic risk engine (`src/strategy/risk-engine.ts`).
+- [x] Pluggable market state provider interface (`src/strategy/market-state-provider.ts`).
+- [x] Zero-leak cryptographic request signer with `/build` gateway support (`src/binance/request-signer.ts`).
+- [x] Typed market data client (`src/binance/market-data-client.ts`).
+- [x] 46/46 unit tests passing across vitest test suites.
 
----
+### Phase 2: Authoritative RWA Telemetry & Wallet Balances (NEXT)
+- [ ] Implement `BinanceRwaClient` (`src/binance/rwa-client.ts`):
+  - `searchRwaToken(keyword)`
+  - `getRwaPriceAndSpread(contractAddress)`: Retrieves `onchainPrice`, `referencePrice`, calculates `spread` or returns `null` (rendering `—`).
+  - `getAssetMarketStatus(contractAddress)`: Authoritative status (`open`, `closed`, `paused`, `halted`, `unavailable`, `unknown`).
+- [ ] Implement `BinanceWalletBalanceClient` (`src/binance/wallet-balance-client.ts`):
+  - Primary: `POST /api/v1/dex/balance/token-balances-by-address`
+  - Redundant: Direct BSC JSON-RPC `eth_call` for `balanceOf`.
+- [ ] Connect `BinanceRwaClient` into `IMarketStateProvider` adapter.
+- [ ] Unit tests for RWA client, spread math, and balance parsing.
 
-## 4. Independent Verification Boundary (GenLayer)
+### Phase 3: Independent Verification & Transaction Simulation
+- [ ] Implement `GenLayerVerificationAdapter` (`src/verification/genlayer-adapter.ts`).
+- [ ] Implement `BinanceSimulationClient` (`src/binance/simulation-client.ts`):
+  - `POST /api/v1/transaction/simulate`
+  - Revert and gas exhaustion gate.
+- [ ] Enforce sequential lifecycle: `PROPOSE → VERIFY → SIMULATE → EXECUTE`.
 
-- GenLayer verification adapter remains an independent verification gate.
-- It verifies evidence packets:
-  - Calculated drift vs user strategy threshold
-  - Trade amount vs maximum circuit breaker cap
-  - Quote timestamp vs max allowable staleness
-  - Market regime status
-- **Zero Mock Rule**: StockPilot never fabricates a verification consensus response. If GenLayer endpoint is unconfigured or unavailable, the system reports `"Verification unavailable"` and halts closed.
+### Phase 4: Execution Pipeline & Agentic Wallet Integration
+- [ ] Implement `BinanceTradingClient` (`src/binance/trading-client.ts`):
+  - RFQ Quote polling (`GET /api/v1/dex/aggregator/quote`).
+  - Signing payload generator (`GET /api/v1/dex/aggregator/swap`).
+- [ ] Integrate Binance Agentic Wallet (`baw`) for user spending limit checks and EIP-712 typed-data signing.
+- [ ] Connect with BNB Agent Studio workflow trigger.
+
+### Phase 5: UI Integration & DevEx Report
+- [ ] Connect live zero-mock telemetry to `public/index.html` dashboard.
+- [ ] Maintain comprehensive `docs/hackathon-build/devex-log.md`.
+- [ ] Produce submission deliverables (demo script, architectural diagrams).

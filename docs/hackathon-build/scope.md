@@ -1,64 +1,76 @@
 # StockPilot — Scope & Product Specification
 
 > **Event**: BNB Hack: Tokenized Stocks Edition (Sep 16 – Oct 11, 2026)  
-> **Target Network**: BNB Smart Chain (BSC) Mainnet  
-> **Asset Focus**: Tokenized Stocks (bStocks / Ondo / xStocks) & USDC Stablecoin  
+> **Target Network**: BNB Smart Chain (BSC) Mainnet (Chain ID: 56)  
+> **Core Asset**: `bNVDA` (Backed NVIDIA) & `USDC` on BSC  
+> **Transaction Mode**: Spot Only (Zero Perpetuals, Zero Leverage)  
+> **Data Policy**: Strict Zero Mock (No Fake Prices, No Fake Transactions)  
 
 ---
 
 ## 1. Product Vision
 
-**StockPilot** is an autonomous BSC agent that lets users define tokenized-stock allocation strategies in plain English (e.g., *"Keep 60% tokenized NVIDIA and 40% USDC. Rebalance when the stock allocation drifts more than 5%"*), continuously monitors the user's BSC portfolio, verifies proposed rebalances against deterministic risk and strategy rules, passes evidence through an independent verification gate, and executes spot rebalancing via the Binance Web3 API / Binance Web3 Wallet.
+**StockPilot** is an autonomous BSC agent that lets users define tokenized-stock allocation strategies in plain English (e.g., *"Keep 60% bNVDA and 40% USDC. Rebalance when bNVDA allocation drifts more than 5%, but do not buy if the tokenized price is more than 2% above the reference price"*), continuously monitors real BSC portfolio holdings, calculates on-chain vs. reference price spread intelligence, verifies proposed rebalances against deterministic risk boundaries and an independent verification gate, validates transaction viability via preflight simulation, and safely dispatches spot execution via Binance Web3 API and the Binance Agentic Wallet.
 
 ---
 
-## 2. Hackathon Requirements & Constraints
+## 2. Mandatory Track Requirements & Alignment
 
-1. **Asset Core**: Centered on tokenized stocks (bStocks / Ondo / xStocks) on BSC.
-2. **Network**: Deployed and operating on **BSC mainnet**.
-3. **Transaction Type**: **Spot transactions only** (absolutely no perpetuals, leverage, or derivatives).
-4. **Binance Integrations**:
-   - Meaningful use of **Binance Web3 API** (portfolio balances, spot routing, reference pricing).
-   - Use of **Binance Web3 Wallet / Agentic Wallet** for secure transaction dispatch.
-   - Use of **BNB Agent Studio** where appropriate for agent workflow triggers.
-5. **GenLayer Independent Verification Gate**:
-   - GenLayer acts as an **independent verification layer** evaluating proposed actions against verifiable evidence before execution.
-   - GenLayer **never executes trades**; it only issues deterministic verification decisions (ALLOW / REJECT / HALT).
-   - If verification fails or evidence is incomplete, execution halts.
-6. **Market-State Intelligence**:
-   - `MARKET_OPEN`: Underlying traditional equities market is open; normal rebalancing execution rules apply.
-   - `MARKET_CLOSED`: Underlying market is closed; tokenized stock can trade on-chain, but underlying reference may be stale; tighter slippage and drift thresholds apply.
-   - `REFERENCE_STALE`: Underlying reference data or on-chain oracle is stale (> threshold); **trade must fail closed**.
-7. **Quality & Authenticity**:
-   - No fake or simulated transactions passed off as real mainnet transactions.
-   - No fake market data.
-   - No fake verification results.
-   - Auditable state machine with fail-closed behavior.
+1. **Asset Core (Mandatory)**: Centered on **bNVDA / bStocks** on BSC Mainnet (`0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495`, 18 decimals), paired with `USDC` (`0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d`, 18 decimals).
+2. **Network**: Fully operational on **BSC Mainnet** (Chain ID: 56).
+3. **Transaction Mode**: **Spot transactions only** (RFQ or Dex Aggregator swap). Absolutely zero perpetuals, zero leverage, and zero margin borrowing.
+4. **Authoritative RWA Data API**:
+   - The authoritative source for tokenized equities.
+   - Distinctly identifies real market status:
+     - `market open`
+     - `market closed`
+     - `paused`
+     - `halted`
+     - `unavailable`
+     - `unknown`
+   - Market status must **never be inferred** from static trading calendars when Binance provides authoritative market status feeds.
+5. **On-Chain vs. Reference Price Intelligence**:
+   - Computes deterministic spread: $\text{spread} = \frac{\text{onchainPrice} - \text{referencePrice}}{\text{referencePrice}}$
+   - Only calculated when both live prices are available; otherwise explicitly displays `—`.
+   - Exposed as an actionable risk condition (e.g., max allowable spread premium before buying).
+6. **Execution Safety Pipeline**:
+   - Enforces the strict sequential lifecycle:
+     $$\text{PROPOSE} \longrightarrow \text{VERIFY} \longrightarrow \text{SIMULATE} \longrightarrow \text{EXECUTE}$$
+   - **Preflight Simulation**: A failed or reverting transaction simulation terminates execution immediately.
+7. **Independent Verification Layer (GenLayer)**:
+   - External verification gate validating cryptographic evidence packets.
+   - **Never executes trades**. Returns verifiable `ALLOW` or `REJECT`.
+8. **Agentic Wallet & Wallet Skills**:
+   - Clear division between programmatic REST API calls (telemetry, drift) and Agentic Wallet skills (`baw` / `binance-tokenized-securities-info` for policy enforcement and EIP-712 signing).
+9. **BNB Agent Studio**:
+   - Persistent autonomous agent runtime evaluating rebalancing loops.
+10. **Zero-Mock Requirement**:
+    - Absolutely no simulated financial data, fake stock prices, fabricated balances, or dummy transaction hashes. If unconfigured or disconnected, explicit states (`Awaiting API Configuration`, `No wallet connected`, `—`) are rendered.
 
 ---
 
-## 3. MVP Scope (Strictly Scoped)
+## 3. Module Prioritization & Scope Boundaries
 
-To ensure completion before the hackathon submission deadline, the MVP includes:
-
-| Component | MVP In-Scope | Out-of-Scope (Future / Post-Hackathon) |
-|---|---|---|
-| **Strategy Creation** | Plain-English parsing + structured target allocations (e.g. 60% bNVDA / 40% USDC, 5% drift) | Multi-asset baskets (>2 assets), complex conditional triggers |
-| **Asset Support** | 1 Tokenized Stock (e.g. bNVDA or Ondo US equity token) + USDC on BSC | Multi-chain stocks, synthetic derivatives, illiquid small-caps |
-| **Portfolio Math** | Exact deterministic spot valuation, weight calculation, drift detection | Yield farming, staking, lending integrations |
-| **Market States** | Tri-state indicator (`MARKET_OPEN`, `MARKET_CLOSED`, `REFERENCE_STALE`) | Complex order book depth modeling, news sentiment |
-| **Rebalance Proposal** | Deterministic trade generator specifying exact delta (Buy/Sell asset, target token, slippage cap) | TWAP/VWAP execution slicing |
-| **Verification Gate** | Evidence packet creation & verification check (strategy, drift, size, staleness, limits) | Complex multi-validator multi-round games |
-| **Execution** | Spot swap invocation via Binance Web3 API / Wallet adapter | Perpetual swaps, margin borrowing, stop-loss orders |
-| **Auditability** | Full JSON audit logs with state transitions (PENDING → VERIFIED → EXECUTED / FAILED) | Social feeds, public leaderboards |
+| Priority | Module | Responsibility in StockPilot | Status |
+|---|---|---|---|
+| **P1** | **RWA Data API** | Authoritative token discovery, dual-price feeds, real market status (`open`, `closed`, `paused`, `halted`), next open time. | Primary Focus |
+| **P2** | **Market Data API** | Spot prices for counter-assets (`USDC`), candlesticks, secondary signals. | Core Client Built |
+| **P3** | **Wallet API & RPC** | Real BSC token balances for `bNVDA` and `USDC` with redundant direct RPC validation. | In Progress |
+| **P4** | **Trading API** | Real spot RFQ quotes, approval checks, and swap execution payloads. | Next Phase |
+| **P5** | **Transaction Simulation** | Preflight transaction simulation (`/api/v1/transaction/simulate` / `baw preflight`). Revert prevention. | Safety Gate |
+| **P6** | **Agentic Wallet Skills** | User spending limits, approved token policies, EIP-712 signing for RFQ orders. | Skills Installed |
+| **P7** | **BNB Agent Studio** | Persistent autonomous agent scheduling and portfolio alert listener. | Agent Layer |
+| **P8** | **GenLayer Gate** | Independent multi-validator evidence verification. | Verification Adapter |
+| *Out-of-Scope* | *DeFi API & b402* | Staking, lending, and HTTP 402 paywalls are excluded for MVP simplicity. | Deprioritized |
 
 ---
 
 ## 4. Fail-Closed Principles
 
-StockPilot adheres to strict fail-closed rules:
-- **Missing or stale price data**: Rebalance aborted; status set to `REFERENCE_STALE`.
-- **Drift below threshold**: No action proposed; reason logged clearly.
-- **Verification failure**: If verification adapter rejects the proposal or times out, trade is halted immediately.
-- **Excessive slippage or market closed constraints**: Rebalance size or slippage bounds exceeded results in immediate rejection.
-- **Secret integrity**: No keys or credentials exposed to client or browser.
+StockPilot adheres strictly to fail-closed operations:
+- **Missing / Stale Telemetry**: If price, reference, or balance data exceeds staleness thresholds, rebalancing is aborted with `REFERENCE_STALE`.
+- **Trading Session Inactive**: If RWA market status is `closed`, `paused`, `halted`, or `unavailable`, execution fails closed.
+- **Spread Premium Breach**: If on-chain price exceeds reference price by more than the user's defined risk limit, buying is blocked.
+- **Verification Failure**: If GenLayer rejects the proposal, execution aborts.
+- **Simulation Failure**: If preflight simulation reverts, execution halts before wallet signing.
+- **Credential Hygiene**: API secrets never reach client/browser or logs.

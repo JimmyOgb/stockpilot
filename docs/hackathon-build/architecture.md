@@ -1,121 +1,174 @@
 # StockPilot Architecture Specification
 
-> **BNB Hack: Tokenized Stocks Edition**  
+> **BNB Hack: Tokenized Stocks Edition** (Sep 16 – Oct 11, 2026)  
 > **System**: StockPilot Autonomous BSC Portfolio Rebalancer  
-> **Status**: Updated post-official documentation audit (Zero Mock Architecture)
+> **Network**: BNB Smart Chain (BSC Mainnet — Chain ID: 56)  
+> **Core Asset**: `bNVDA` (Backed NVIDIA — `0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495`) & `USDC` (`0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d`)  
+> **Transaction Mode**: Spot Only (Zero Perpetuals, Zero Leverage)  
+> **Data Integrity**: Strict Zero-Mock Policy  
 
 ---
 
 ## 1. System Overview
 
-StockPilot provides an end-to-end autonomous pipeline for tokenized-stock portfolio management on BNB Smart Chain (BSC). It decouples portfolio monitoring, deterministic decision math, external independent verification, and mainnet execution.
+StockPilot is an autonomous BSC agent that lets users define tokenized-stock allocation strategies in plain English, continuously monitors their on-chain portfolio, verifies proposed rebalances against deterministic risk parameters and an independent verification gate, validates transaction viability via preflight simulation, and safely executes spot rebalancing via the Binance Web3 API and Binance Agentic Wallet.
 
 ---
 
-## 2. End-to-End Rebalancing Flow
+## 2. Updated End-to-End Decision Pipeline
+
+The StockPilot architecture enforces strict separation of responsibilities across each layer of the pipeline:
+
+$$\begin{aligned}
+\text{USER STRATEGY} &\longrightarrow \text{STRATEGY PARSER} \\
+&\longrightarrow \text{REAL RWA DATA} \\
+&\longrightarrow \text{REAL MARKET DATA} \\
+&\longrightarrow \text{REAL WALLET STATE} \\
+&\longrightarrow \text{DETERMINISTIC STRATEGY / RISK ENGINE} \\
+&\longrightarrow \text{PROPOSED ACTION} \\
+&\longrightarrow \text{GENLAYER INDEPENDENT VERIFICATION} \\
+&\longrightarrow \text{BINANCE TRANSACTION SIMULATION} \\
+&\longrightarrow \text{EXPLICIT EXECUTION AUTHORIZATION} \\
+&\longrightarrow \text{BINANCE TRADING / AGENTIC WALLET} \\
+&\longrightarrow \text{BSC MAINNET} \\
+&\longrightarrow \text{REAL RECEIPT / STATUS} \\
+&\longrightarrow \text{AUDIT HISTORY}
+\end{aligned}$$
 
 ```mermaid
 flowchart TD
-    User([User / Investor]) -->|1. Strategy Prompt e.g. 60/40| UI[Strategy UI]
-    UI -->|2. Structured Strategy Config| Agent[Agent / Decision Engine]
-    
-    subgraph DataGathering [Data Ingestion]
-        Agent -->|3. Query Balances & Quotes| BinanceAPI[Binance Web3 API Client]
-        BinanceAPI -->|Fetch BSC balances & spot quotes| BSCMarket[(Binance Web3 / BSC Mainnet)]
-        BinanceAPI -.->|Return fresh portfolio & quotes| Agent
+    User([User Strategy Prompt e.g. 60% bNVDA / 40% USDC]) --> Parser[Strategy Parser]
+    Parser --> StrategyConfig[Target Allocations & Risk Thresholds]
+
+    subgraph LiveTelemetry [1. Real Telemetry & RWA Feeds - Binance Web3 API]
+        RWA[Authoritative RWA Data API\n- On-Chain Price & Reference Price\n- Market Status: open/closed/paused/halted\n- Attestation & Metadata]
+        Market[Market API\n- Spot Prices & Candlesticks]
+        Wallet[Wallet API / BSC RPC\n- Real Token Balances: bNVDA & USDC]
     end
 
-    subgraph StateDetection [Pluggable Market State Adapter]
-        Agent -->|4. Ingest Reference Timestamp & Market Data| MktAdapter[IMarketStateProvider Adapter]
-        MktAdapter --> MktCheck{Market State?}
-        MktCheck -->|REFERENCE_STALE| HaltStale[Fail Closed: Block Trade]
-        MktCheck -->|MARKET_CLOSED| ApplyStrict[Apply Strict Policy Bounds]
-        MktCheck -->|MARKET_OPEN| CalcDrift[Calculate Portfolio Drift]
-        ApplyStrict --> CalcDrift
+    StrategyConfig --> RiskEngine
+    RWA --> RiskEngine
+    Market --> RiskEngine
+    Wallet --> RiskEngine
+
+    subgraph DeterministicEngine [2. Deterministic Strategy & Risk Engine]
+        RiskEngine[StockPilot Risk Engine\n- Portfolio Valuation & Drift Math\n- Spread Intelligence: onchain vs reference\n- Fail-Closed: Stale / Paused / Halted]
+        RiskEngine --> DriftEval{Drift > Threshold & Risk Checks Pass?}
+        DriftEval -->|No| NoAction[Log No-Op & Update Audit History]
+        DriftEval -->|Yes| ProposeAction[Generate Proposed Spot Rebalance]
     end
 
-    subgraph DeterministicEngine [Deterministic Strategy & Risk Engine]
-        CalcDrift --> DriftCheck{Drift > Threshold?}
-        DriftCheck -->|No| NoRebalance[No Trade Needed]
-        DriftCheck -->|Yes| GenerateProposal[Generate Spot Rebalance Proposal]
+    subgraph VerificationLayer [3. Independent Verification Layer - GenLayer]
+        ProposeAction --> EvidencePacket[Compile Signed Evidence Packet\n- Target weights, drift bps, quote freshness\n- Market state & spread premium]
+        EvidencePacket --> GenLayerGate[GenLayer Intelligent Contract\n- Deterministic Multi-Validator Consensus\n- NEVER executes trades]
+        GenLayerGate --> VerifyDecision{Decision == ALLOW?}
+        VerifyDecision -->|REJECT / UNKNOWN| AbortVerify[Fail Closed: Abort Rebalance]
     end
 
-    subgraph Verification [Independent Verification Layer]
-        GenerateProposal -->|5. Submit Evidence Packet| Verifier[GenLayer Verification Adapter]
-        Verifier -->|Evaluate: Drift, Bounds, Freshness, Limits| VerifierDecision{Consensus / Allow?}
-        VerifierDecision -->|REJECT / UNKNOWN| HaltVerify[Fail Closed: Abort Execution]
-        VerifierDecision -->|ALLOW| ApprovedProposal[Signed / Approved Action]
+    subgraph SimulationLayer [4. Transaction Simulation Service - Binance Web3]
+        VerifyDecision -->|ALLOW| SimulateTx[Binance Transaction Simulation API\nPOST /api/v1/transaction/simulate\n- Preflight state override & gas estimation]
+        SimulateTx --> SimResult{Simulation Success?}
+        SimResult -->|FAIL / REVERT| AbortSim[Fail Closed: Simulation Failed - Abort]
     end
 
-    subgraph Execution [Spot Execution & Settlement]
-        ApprovedProposal -->|6. Prepare Spot Trade| ExecAdapter[Binance Web3 Wallet / RFQ Adapter]
-        ExecAdapter --> ExecMode{Execution Mode?}
-        ExecMode -->|SWAP: Standard Token| BroadcastSwap[Broadcast Raw Swap Tx]
-        ExecMode -->|RFQ: Tokenized Equity| SubmitRFQ[Sign EIP-712 Typed Data & Submit /order/submit]
-        BroadcastSwap --> BSC[(BSC Mainnet)]
-        SubmitRFQ --> BSC
-        BSC -->|7. Transaction Receipt / Settlement| ExecAdapter
-        ExecAdapter -->|8. Final Receipt| AuditLog[(Persistence / Audit History)]
+    subgraph ExecutionLayer [5. Execution Authorization & Dispatch]
+        SimResult -->|PASS| AuthCheck[Explicit Execution Authorization\n- Verify User Daily Limits & Policy via Agentic Wallet]
+        AuthCheck --> Dispatch[Binance Trading API / Agentic Wallet\n- RFQ / Swap Execution\n- EIP-712 Typed Data Signing]
+        Dispatch --> BSC[(BSC Mainnet Settlement)]
+        BSC --> Receipt[Real Onchain Tx Receipt & Status]
     end
 
-    HaltStale --> AuditLog
-    NoRebalance --> AuditLog
-    HaltVerify --> AuditLog
-    AuditLog -.->|9. Live Status & Receipts| UI
+    Receipt --> Audit[(Immutable Audit History Store)]
+    NoAction --> Audit
+    AbortVerify --> Audit
+    AbortSim --> Audit
+    Audit -.-> UI[Zero-Mock Web Dashboard]
 ```
 
 ---
 
-## 3. Subsystem Separation & Interfaces
+## 3. Core Architectural Modules & Responsibilities
 
-### 3.1 Strategy UI (`src/client` / Web Dashboard)
-- Visualizes user's plain-English strategy and structured target allocations.
-- Displays real-time portfolio balance, target weights, actual weights, and drift percentage.
-- Features a prominent **Market State Indicator** badge:
-  - 🟢 `MARKET_OPEN`
+### 3.1 RWA Data API (Authoritative Tokenized-Equity Source)
+The RWA Data API is the primary authority for tokenized equities (`bNVDA`, Ondo assets):
+- **Token Discovery & Metadata**: Contract address, issuer backing (Backed Finance), decimals (`18`), and backing ratio (`sharesMultiplier`).
+- **Dual-Price Discovery**:
+  - `onchainPrice`: Real-time spot price of tokenized equity on BSC.
+  - `referencePrice`: Real-time underlying traditional equity reference price.
+- **Authoritative Market Status**: Must never be inferred from static calendars. The system explicitly distinguishes and handles:
+  - 🟢 `MARKET_OPEN` / `premarket` / `regular` / `postmarket` / `overnight`
   - 🟡 `MARKET_CLOSED`
-  - 🔴 `REFERENCE_STALE` (Trading blocked)
-- **Zero Mock Policy**: Displays explicit `"Not Connected"`, `"No live data available"`, and `"—"` states until real API/wallet feeds are connected.
+  - 🟠 `PAUSED`
+  - 🔴 `HALTED`
+  - ⚪ `UNAVAILABLE`
+  - ❓ `UNKNOWN`
+- **Next Open/Close Time**: Authoritative timestamps provided by Binance Web3 / DeFI endpoints (`/market/status/ai` and `/asset/market/status/ai`).
 
-### 3.2 Agent / Decision Engine (`src/agent/`)
-- Orchestrates polling loops and event-driven rebalance checks.
-- Coordinates the pipeline: Fetch → Evaluate State → Compute Drift → Verify → Execute → Log.
+### 3.2 Market API (Crypto & Supporting Feeds)
+- Real-time spot pricing for counter-assets (`USDC`) and native gas (`BNB`).
+- Candlesticks and volume metrics for secondary liquidity analysis.
+- Fails closed if data timestamps exceed `MAX_STALENESS_SECONDS` (default: 60s).
 
-### 3.3 Binance Web3 API Client (`src/binance/`)
-- Encapsulates authenticated calls to the **Binance Web3 Trading & Market APIs**:
-  - `POST /api/v1/dex/market/price`: Real-time spot price discovery.
-  - `POST /api/v1/dex/balance/token-balances-by-address`: Wallet holdings on BSC.
-  - `GET /api/v1/dex/aggregator/quote`: Token swap quotes and execution mode (`SWAP` vs `RFQ`).
-  - `GET /api/v1/dex/aggregator/swap`: Generates EIP-712 typed-data to sign (RFQ) or raw swap calldata.
-  - `POST /api/v1/dex/aggregator/order/submit`: Submits signed RFQ orders with idempotency UUID.
-  - `GET /api/v1/dex/aggregator/order/{orderId}`: Polls settlement status.
-- Generates required `X-OC-APIKEY`, `X-OC-TIMESTAMP`, and `X-OC-SIGN` headers.
+### 3.3 Wallet API & BSC RPC Fallback (Real Portfolio State)
+- Queries token balances via `POST /api/v1/dex/balance/token-balances-by-address`.
+- Incorporates direct BSC JSON-RPC (`eth_call` for ERC-20 `balanceOf`) as an authoritative, zero-mock fallback to guarantee uncompromised state verification.
 
-### 3.4 Pluggable Market State Provider (`src/strategy/market-state-provider.ts`)
-- **Architectural Change**: Decoupled from hardcoded assumptions into an `IMarketStateProvider` interface.
-- Evaluates whether trading sessions are active:
-  - Supports rule-based schedules (e.g. US equities calendar) as an initial provider implementation.
-  - Allows injecting live external market calendar feeds or reacting directly to Binance Web3 API market halt codes (`40369` / `40367`).
-  - Fails closed to `REFERENCE_STALE` whenever data freshness exceeds `MAX_STALENESS_SECONDS`.
+### 3.4 On-Chain vs. Reference Price Intelligence (StockPilot Differentiator)
+When the RWA Data API provides both `onchainPrice` and `referencePrice`, StockPilot calculates the real-time spread deterministically:
 
-### 3.5 Strategy & Risk Engine (`src/strategy/`)
-- Pure, deterministic calculation functions:
-  - `calculateAllocation(balances, prices): PortfolioAllocation`
-  - `calculateDrift(currentAllocation, targetAllocation): DriftResult`
-  - `buildRebalanceProposal(allocation, drift, limits): RebalanceProposal | null`
-- **Application Safety-Policy Defaults**: Slippage bounds (e.g., 50 bps for open, 25 bps for closed) and trade caps are explicitly modeled as StockPilot application safety policies rather than factual exchange constants.
+$$\text{spread} = \frac{\text{onchainPrice} - \text{referencePrice}}{\text{referencePrice}}$$
 
-### 3.6 Verification Adapter (`src/verification/`)
-- Independent verification boundary connecting to **GenLayer**.
-- Evaluates cryptographic evidence packets (drift calculation, quote freshness, market state, limits).
-- **Does not execute trades**. Returns verifiable `ALLOW` or `REJECT`.
-- Zero mock policy: Remains uncommitted until real GenLayer contract/RPC verification is invoked.
+- **Zero-Mock Rendering**: Calculated and displayed **only** when both feeds are valid and live. If either is missing, stale, or unavailable, the UI and API explicitly return `—`.
+- **Strategy Condition Integration**: The deterministic risk engine evaluates user-defined spread constraints (e.g., *"Do not buy if tokenized price is > 2.0% above traditional reference"*), preventing toxic arbitrage or paying excessive illiquidity premiums.
 
-### 3.7 Execution Adapter (`src/execution/`)
-- Manages transaction signing and settlement dispatch via **Binance Web3 Wallet / Agentic Wallet**:
-  - For standard tokens: signs and broadcasts raw swap calldata on BSC mainnet.
-  - For tokenized equities (bNVDA, Ondo): signs EIP-712 typed-data within the strict 30-second quote window and submits via `/api/v1/dex/aggregator/order/submit`.
-- Captures transaction receipt and settlement hash.
+### 3.5 Deterministic Strategy & Risk Engine (`src/strategy/`)
+- Pure mathematical calculation of portfolio weights, drift basis points, and rebalance amounts.
+- Safety boundaries:
+  - Max trade size per rebalance.
+  - Max slippage tolerance (e.g. 50 bps in open session, 25 bps in closed/overnight session).
+  - Max spread premium threshold.
+  - Minimum drift activation threshold (e.g. 500 bps / 5.0%).
 
-### 3.8 Persistence & Audit Store (`src/storage/`)
-- Maintains an immutable append-only record of all evaluations, verification outcomes, and transaction receipts.
+### 3.6 Independent Verification Layer (GenLayer)
+- Evaluates proposed rebalances as an external validator.
+- Receives cryptographic evidence packet:
+  - Proposed rebalance direction and volume.
+  - Current portfolio valuation and computed drift.
+  - Current RWA market status and reference price spread.
+  - Quote timestamp and freshness guarantee.
+- **Strict Boundary**: GenLayer **never executes trades**. It issues a verifiable consensus decision (`ALLOW`, `REJECT`, `HALT`).
+- **Fail-Closed**: If GenLayer rejects the packet, encounters an error, or is unconfigured, execution immediately halts.
+
+### 3.7 Transaction Simulation Service (Binance Web3 / Preflight)
+- **Hard Gate**: `PROPOSE → VERIFY → SIMULATE → EXECUTE`.
+- Evaluates transaction viability via Binance Transaction Simulation API (`POST /api/v1/transaction/simulate`) or Agentic Wallet preflight before any signing request is triggered.
+- Detects contract reverts, insufficient allowance, slippage breaches, and gas exhaustion.
+- **A failed simulation terminates the execution flow immediately**.
+
+### 3.8 Execution Authorization & Agentic Wallet Integration (`src/binance/`, `.agents/skills/`)
+StockPilot clearly delineates responsibilities between programmatic API calls and Agentic Wallet skills:
+
+| Capability | Module Handling | Rationale |
+|---|---|---|
+| **RWA Metadata & Market Status** | `binance-tokenized-securities-info` Skill & RWA Data API | Authoritative access to tokenized equity parameters, trading halt codes, and sessions. |
+| **Telemetry & Drift Polling** | Binance Web3 REST API Client (`src/binance/`) | High-frequency programmatic background polling without human prompt friction. |
+| **Spending Limits & Policy** | Binance Agentic Wallet (`baw`) Policy Manager | Enforces user-configured daily allowances and contract whitelists. |
+| **RFQ Order Signing** | Binance Agentic Wallet (`baw sign-message`) | User or agent EIP-712 typed-data signing for zero-slippage RFQ execution. |
+| **Settlement & Receipts** | Binance Trading API & BSC Mainnet | Cryptographic transaction receipt and status polling. |
+
+### 3.9 BNB Agent Studio Integration
+- StockPilot operates as an autonomous agent registered with **BNB Agent Studio**.
+- Ingests scheduled cron triggers and portfolio alert events, driving the rebalancing loop autonomously rather than functioning solely as a passive web dashboard.
+
+---
+
+## 4. Architectural Summary
+
+| Layer | Responsibility | Does NOT Do |
+|---|---|---|
+| **Strategy UI** | User plain-English strategy input, zero-mock telemetry, anime narrative | Fake prices or simulated execution |
+| **StockPilot Engine** | Deterministic drift, spread intelligence, proposal construction | Claim consensus or execute without verification |
+| **GenLayer Gate** | Independent cryptographic verification of proposal rules | Execute trades or hold private keys |
+| **Binance Simulation** | Preflight on-chain revert and gas verification | Authorize execution on failed simulations |
+| **Agentic Wallet** | Policy boundary enforcement, EIP-712 signing, spot execution | Decide whether a strategy is mathematically valid |
+| **BSC Mainnet** | Final decentralized spot settlement of bNVDA and USDC | N/A |
