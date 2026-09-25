@@ -106,3 +106,22 @@ Every real Binance integration attempt must record:
 - **Result**: Absence of standalone `GET /market-hours` endpoint confirmed; error codes `40369` (BStock) and `40367` (Ondo) are emitted when attempting trades outside active sessions.
 - **Resolution**: Re-architected `MarketState` detection from hardcoded assumptions to a pluggable `IMarketStateProvider` adapter interface. The application now uses StockPilot safety-policy configuration defaults rather than claiming hardcoded hours are authoritative exchange truth.
 - **Improvement Suggestion**: Expose a dedicated `GET /api/v1/dex/market/rwa/session-status?symbol=bNVDA` endpoint returning current session state (`PRE_MARKET`, `REGULAR`, `POST_MARKET`, `CLOSED`) and next session open timestamp.
+
+---
+
+### Entry #006: BinanceRequestSigner Implementation & Deterministic Verification
+- **Date / Time**: 2026-09-25 08:31:00 UTC
+- **Endpoint / Module**: Binance Web3 Authentication Layer (`src/binance/request-signer.ts`)
+- **Purpose**: Implement the client-side cryptographic request signer for authenticated endpoints (`X-OC-APIKEY`, `X-OC-TIMESTAMP`, `X-OC-SIGN`, `X-OC-NONCE`).
+- **Request Type**: Local cryptographic implementation & unit test verification (zero network calls).
+- **Result**: Success (19/19 tests passing).
+- **Latency**: Sub-millisecond local HMAC-SHA256 generation.
+- **Errors**: Handled and tested invalid credentials, missing API key/secret, malformed timestamps, and serialization edge-cases.
+- **Documentation Location**: `https://web3.binance.com/build` & `https://web3.binance.com/en/dev-docs/`
+- **Official Test Vector Existence**:
+  - **Audit Finding**: The official Binance Web3 API documentation documents the canonical string format (`payload + timestamp`), ISO 8601 millisecond timestamp specification, and Base64-encoded HMAC-SHA256 requirement. However, the portal **does not provide a static public test vector** (i.e. specific public key, secret, and expected hash output).
+  - **Resolution**: Implemented deterministic test vectors in `tests/binance-request-signer.test.ts` verifying exact mathematical equivalence against Node.js `crypto.createHmac('sha256', secret).update(canonicalPayload).digest('base64')`, ensuring 100% deterministic reproducibility.
+- **Security Audit**: Verified that API secret is never stored in headers, never logged, and never included in error messages.
+- **Remaining Live Verification**:
+  - Live handshake with Binance Web3 gateway once official API keys are provisioned to verify that gateway clock drift is within the ±5,000 ms `recv_window`.
+

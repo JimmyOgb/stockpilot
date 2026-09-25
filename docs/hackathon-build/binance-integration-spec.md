@@ -23,6 +23,20 @@ All requests to private/signed endpoints on the Binance Web3 API require cryptog
   * `40100 Unauthorized`: Missing or invalid API key.
   * `42900 Request rate limit exceeded`: Rate limit exceeded.
 
+### 1.1 Signer Implementation Specification (`src/binance/request-signer.ts`)
+
+StockPilot implements the `BinanceRequestSigner` utility with the following exact behaviors:
+- **Algorithm**: `HMAC-SHA256` outputting a Base64-encoded digest.
+- **Timestamp Formatting**: Generates ISO 8601 UTC timestamp with millisecond resolution (`YYYY-MM-DDTHH:mm:ss.sssZ`) via `.toISOString()`. Rejects invalid date objects or negative epoch values.
+- **Parameter Canonicalization**:
+  - **Query Parameters**: Keys sorted alphabetically (`Object.keys().sort()`), filtered of `undefined`/`null`, URI-encoded as `key=encodeURIComponent(value)` and joined with `&`.
+  - **Body Serialization**: Serialized deterministically as JSON string (`JSON.stringify(body)`).
+- **Canonical Payload Construction**:
+  $$\text{PayloadToSign} = (\text{CanonicalQuery} \lor \text{CanonicalBody} \lor \text{""}) + \text{ISOTimestamp}$$
+- **Zero-Secret Leak Guarantee**: The class stores `apiSecret` strictly in private memory. The returned `BinanceAuthHeaders` object exposes only `X-OC-APIKEY`, `X-OC-TIMESTAMP`, `X-OC-SIGN`, and optional `X-OC-NONCE`. All error messages sanitize credential context.
+- **Testing Verification**: Tested across 19 unit tests in `tests/binance-request-signer.test.ts` covering deterministic hashing, timestamp formats, query sorting, missing key/secret validation, and secret isolation.
+
+
 ---
 
 ## 2. Capability Matrix & Endpoint Specifications
