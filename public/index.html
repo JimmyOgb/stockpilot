@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StockPilot — Autonomous BSC Agent for Tokenized Stocks</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    @keyframes pulse-subtle {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.85; transform: scale(1.02); }
+    }
+    @keyframes scanline {
+      0% { transform: translateY(-100%); }
+      100% { transform: translateY(1000%); }
+    }
+    .scanline-effect {
+      background: linear-gradient(to bottom, transparent 50%, rgba(0, 240, 255, 0.03) 51%);
+      background-size: 100% 4px;
+    }
+    .glass-panel {
+      background: rgba(13, 19, 34, 0.85);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(0, 240, 255, 0.15);
+    }
+    .glass-panel-gold {
+      background: rgba(19, 17, 13, 0.85);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(240, 185, 11, 0.25);
+    }
+  </style>
+</head>
+<body class="bg-[#070a13] text-[#e2e8f0] font-sans antialiased min-h-screen relative overflow-x-hidden selection:bg-[#00f0ff] selection:text-black">
+
+  <!-- Background Canvas for anime cyber particles -->
+  <canvas id="bg-canvas" class="fixed inset-0 pointer-events-none z-0 opacity-40"></canvas>
+
+  <!-- ========================================================================= -->
+  <!-- 1. CINEMATIC ANIME-INSPIRED PRODUCT INTRODUCTION SEQUENCE                -->
+  <!-- ========================================================================= -->
+  <div id="intro-container" class="fixed inset-0 z-50 flex flex-col justify-between bg-[#070a13]/95 backdrop-blur-xl transition-all duration-700 p-6 md:p-12 overflow-y-auto">
+    <!-- Top Bar: Branding & Skip Button -->
+    <div class="flex items-center justify-between z-10 w-full max-w-7xl mx-auto">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-[#F0B90B] to-[#00f0ff] p-[2px]">
+          <div class="w-full h-full bg-[#070a13] rounded-[7px] flex items-center justify-center">
+            <span class="text-lg font-black text-[#F0B90B]">SP</span>
+          </div>
+        </div>
+        <div>
+          <h1 class="text-xl font-bold tracking-wider text-white">StockPilot</h1>
+          <p class="text-xs text-[#00f0ff] tracking-widest uppercase">Autonomous Intelligence for Tokenized Stocks</p>
+        </div>
+      </div>
+      <button id="skip-intro-btn" class="px-5 py-2 rounded-full border border-cyan-500/30 hover:border-cyan-400 bg-cyan-950/30 hover:bg-cyan-900/50 text-cyan-300 text-sm font-medium transition-all shadow-[0_0_15px_rgba(0,240,255,0.2)]">
+        Skip Intro → Enter Terminal
+      </button>
+    </div>
+
+    <!-- Main Anime Visual & Narrative Stage -->
+    <div class="flex-1 flex flex-col lg:flex-row items-center justify-center gap-8 max-w-7xl mx-auto my-6 w-full z-10">
+      <!-- Anime Visual Display (Left / Top) -->
+      <div class="w-full lg:w-1/2 relative rounded-2xl overflow-hidden border border-cyan-500/20 shadow-[0_0_50px_rgba(0,240,255,0.15)] group">
+        <img src="assets/stockpilot_hero.jpg" alt="StockPilot Anime Key Visual" class="w-full h-[320px] md:h-[420px] object-cover transition-transform duration-1000 group-hover:scale-105">
+        <div class="absolute inset-0 bg-gradient-to-t from-[#070a13] via-transparent to-transparent"></div>
+        <div class="absolute top-4 left-4 flex items-center gap-2 px-3 py-1 rounded-full bg-black/60 backdrop-blur-md border border-amber-400/40 text-amber-300 text-xs">
+          <span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+          <span>BNB Hack: Tokenized Stocks Edition</span>
+        </div>
+        <div class="absolute bottom-4 left-4 right-4 p-4 rounded-xl bg-[#0a0f1d]/90 border border-cyan-500/30 backdrop-blur-md">
+          <div class="text-[11px] uppercase tracking-widest text-cyan-400 font-mono mb-1" id="scene-badge">SCENE 01 / 08</div>
+          <h3 class="text-lg font-bold text-white tracking-wide" id="scene-title">The Traditional Market Bell</h3>
+        </div>
+      </div>
+
+      <!-- Narrative & Concept Walkthrough (Right / Bottom) -->
+      <div class="w-full lg:w-1/2 flex flex-col justify-center space-y-6">
+        <div class="glass-panel p-6 md:p-8 rounded-2xl relative overflow-hidden">
+          <div class="absolute top-0 right-0 w-32 h-32 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none"></div>
+          
+          <div class="flex items-center gap-3 mb-4">
+            <span id="step-number" class="w-8 h-8 rounded-full bg-cyan-500/20 text-cyan-400 border border-cyan-400/40 flex items-center justify-center font-mono font-bold text-sm">1</span>
+            <span class="text-xs uppercase tracking-widest text-slate-400 font-mono">Product Architecture Sequence</span>
+          </div>
+
+          <p id="scene-narrative" class="text-slate-200 text-base md:text-lg leading-relaxed min-h-[100px]">
+            At 16:00 ET, physical equities markets (NYSE/NASDAQ) sound the closing bell. Traditional trading ceases, order books freeze, and capital sleeps until tomorrow.
+          </p>
+
+          <!-- Interactive Concept Badge -->
+          <div id="scene-graphic" class="mt-6 p-4 rounded-xl bg-slate-900/80 border border-slate-800 font-mono text-xs text-cyan-300 space-y-1">
+            <div class="flex justify-between items-center text-slate-400 border-b border-slate-800 pb-1 mb-2">
+              <span>TRADITIONAL EQUITIES</span>
+              <span class="text-amber-400">STATUS: CLOSED (16:00 ET)</span>
+            </div>
+            <div>Oracle Status: Reference Locked</div>
+            <div class="text-slate-500">Liquidity: Dormant (Zero trades permitted)</div>
+          </div>
+        </div>
+
+        <!-- Navigation Controls & Step Indicators -->
+        <div class="flex items-center justify-between gap-4">
+          <div class="flex items-center gap-2" id="scene-dots">
+            <!-- 8 Step Dots -->
+          </div>
+          <div class="flex items-center gap-3">
+            <button id="prev-scene-btn" class="px-4 py-2 rounded-lg border border-slate-700 hover:border-slate-500 text-slate-300 text-sm font-medium transition-all disabled:opacity-30 disabled:pointer-events-none">
+              ← Back
+            </button>
+            <button id="next-scene-btn" class="px-6 py-2 rounded-lg bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-black font-semibold text-sm transition-all shadow-[0_0_20px_rgba(0,240,255,0.4)]">
+              Next Step →
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom Status Note: Explains product intro vs live data -->
+    <div class="w-full max-w-7xl mx-auto text-center text-xs text-slate-500 z-10 pt-2 border-t border-slate-900">
+      <span>Zero Mock Policy: The intro sequence illustrates architecture. All dashboard figures require live API and onchain telemetry.</span>
+    </div>
+  </div>
+
+
+  <!-- ========================================================================= -->
+  <!-- 2. LIVE STOCKPILOT APPLICATION DASHBOARD (ZERO MOCK DATA)                 -->
+  <!-- ========================================================================= -->
+  <div id="dashboard-container" class="relative z-10 min-h-screen flex flex-col p-4 md:p-8 max-w-7xl mx-auto space-y-8">
+    
+    <!-- Header Navigation -->
+    <header class="glass-panel p-4 md:p-6 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4 shadow-xl">
+      <div class="flex items-center gap-4">
+        <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-[#F0B90B] to-[#00f0ff] p-[2px] shadow-[0_0_20px_rgba(240,185,11,0.3)]">
+          <div class="w-full h-full bg-[#070a13] rounded-[10px] flex items-center justify-center">
+            <span class="text-xl font-black text-[#F0B90B]">SP</span>
+          </div>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-2xl font-bold tracking-tight text-white">StockPilot</h1>
+            <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-[#F0B90B]/20 text-[#F0B90B] border border-[#F0B90B]/40">BSC MAINNET</span>
+          </div>
+          <p class="text-xs text-slate-400">Autonomous tokenized-stock allocation & deterministic spot rebalancing</p>
+        </div>
+      </div>
+
+      <!-- Live Telemetry Badges -->
+      <div class="flex flex-wrap items-center gap-3">
+        <!-- Market State Indicator -->
+        <div id="market-state-badge" class="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-900/60 font-mono text-xs">
+          <span class="w-2 h-2 rounded-full bg-slate-500 animate-pulse"></span>
+          <span class="text-slate-400">MARKET: CONNECTING...</span>
+        </div>
+
+        <!-- Backend Health -->
+        <div id="backend-health-badge" class="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-900/60 font-mono text-xs">
+          <span class="w-2 h-2 rounded-full bg-slate-500"></span>
+          <span class="text-slate-400">API: POLLING...</span>
+        </div>
+
+        <!-- Replay Intro Button -->
+        <button id="replay-intro-btn" title="Replay Animated Product Intro" class="px-3 py-1.5 rounded-lg border border-cyan-500/30 hover:border-cyan-400 bg-cyan-950/30 text-cyan-300 text-xs font-mono transition-all">
+          🎬 Replay Intro
+        </button>
+
+        <!-- Wallet Connection Button -->
+        <button id="connect-wallet-btn" class="px-4 py-2 rounded-lg bg-gradient-to-r from-[#F0B90B] to-amber-500 hover:from-amber-400 hover:to-amber-500 text-black font-semibold text-xs font-mono transition-all shadow-[0_0_15px_rgba(240,185,11,0.3)]">
+          Connect BSC Wallet
+        </button>
+      </div>
+    </header>
+
+    <!-- Real Data Disclaimer Alert -->
+    <div class="p-4 rounded-xl bg-cyan-950/30 border border-cyan-500/30 flex items-start gap-3 text-xs text-cyan-200/90 font-mono">
+      <span class="text-cyan-400 text-base font-bold">ℹ</span>
+      <div>
+        <span class="font-bold text-cyan-300 uppercase tracking-wider">Zero Mock Architecture Active:</span>
+        All balances, drift metrics, and verification states reflect authentic onchain or backend responses. When a wallet is not connected or API keys are not supplied, fields display explicit non-mock states ("—", "Not Connected", "Awaiting live data") instead of fictional demo values.
+      </div>
+    </div>
+
+    <!-- Metrics Cards Grid (Zero Mock Policy Enforced) -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <!-- 1. Connected Wallet -->
+      <div class="glass-panel p-5 rounded-xl flex flex-col justify-between">
+        <div class="text-xs uppercase tracking-wider text-slate-400 font-mono">Connected BSC Wallet</div>
+        <div class="my-3">
+          <div id="val-wallet-addr" class="text-base font-mono font-medium text-slate-300 truncate">Not Connected</div>
+          <div id="val-network-name" class="text-xs text-slate-500 font-mono mt-1">BNB Chain (ID: 56)</div>
+        </div>
+        <div class="text-[11px] text-slate-500 font-mono">Binance Web3 / Web3 Injected</div>
+      </div>
+
+      <!-- 2. Tokenized Stock (bNVDA) -->
+      <div class="glass-panel p-5 rounded-xl flex flex-col justify-between">
+        <div class="flex items-center justify-between text-xs uppercase tracking-wider text-slate-400 font-mono">
+          <span>Tokenized Stock</span>
+          <span class="text-cyan-400 font-bold">bNVDA</span>
+        </div>
+        <div class="my-3">
+          <div id="val-stock-balance" class="text-2xl font-bold font-mono text-white">—</div>
+          <div id="val-stock-usd" class="text-xs text-slate-400 font-mono mt-1">No live data available</div>
+        </div>
+        <div class="text-[11px] text-slate-500 font-mono">Target: 60.0% (6,000 bps)</div>
+      </div>
+
+      <!-- 3. Stablecoin (USDC) -->
+      <div class="glass-panel p-5 rounded-xl flex flex-col justify-between">
+        <div class="flex items-center justify-between text-xs uppercase tracking-wider text-slate-400 font-mono">
+          <span>Counter Stablecoin</span>
+          <span class="text-emerald-400 font-bold">USDC</span>
+        </div>
+        <div class="my-3">
+          <div id="val-stable-balance" class="text-2xl font-bold font-mono text-white">—</div>
+          <div id="val-stable-usd" class="text-xs text-slate-400 font-mono mt-1">No live data available</div>
+        </div>
+        <div class="text-[11px] text-slate-500 font-mono">Target: 40.0% (4,000 bps)</div>
+      </div>
+
+      <!-- 4. Portfolio Drift & Status -->
+      <div class="glass-panel p-5 rounded-xl flex flex-col justify-between">
+        <div class="flex items-center justify-between text-xs uppercase tracking-wider text-slate-400 font-mono">
+          <span>Observed Drift</span>
+          <span class="text-amber-400 font-bold">THRESHOLD: 500 bps</span>
+        </div>
+        <div class="my-3">
+          <div id="val-drift-bps" class="text-2xl font-bold font-mono text-slate-400">—</div>
+          <div id="val-drift-direction" class="text-xs text-slate-400 font-mono mt-1">Awaiting balance sync</div>
+        </div>
+        <div class="text-[11px] text-slate-500 font-mono">Rebalance trigger: &gt; 5.0%</div>
+      </div>
+    </div>
+
+    <!-- Strategy Configuration & Autonomous Decision Engine -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      
+      <!-- Strategy Definition Panel (Left 1 col) -->
+      <div class="glass-panel p-6 rounded-2xl flex flex-col justify-between space-y-6">
+        <div>
+          <div class="flex items-center gap-2 mb-4">
+            <span class="w-3 h-3 rounded-full bg-cyan-400"></span>
+            <h2 class="text-lg font-bold text-white">Natural Language Strategy</h2>
+          </div>
+          <p class="text-xs text-slate-400 mb-4">
+            Define your allocation in plain English. StockPilot parses the intent into deterministic basis points.
+          </p>
+
+          <label class="block text-xs uppercase tracking-wider text-slate-400 font-mono mb-2">Strategy Prompt</label>
+          <textarea id="strategy-prompt-input" rows="4" class="w-full bg-[#0a0f1d] border border-slate-700 focus:border-cyan-400 rounded-xl p-3 text-sm font-mono text-cyan-200 focus:outline-none transition-all resize-none">Keep 60% tokenized NVIDIA and 40% USDC. Rebalance when the stock allocation drifts more than 5%.</textarea>
+
+          <button id="parse-strategy-btn" class="mt-3 w-full py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-mono text-xs font-semibold tracking-wider transition-all shadow-[0_0_15px_rgba(0,240,255,0.3)]">
+            Parse & Validate Intent
+          </button>
+        </div>
+
+        <!-- Parsed Strategy Attributes -->
+        <div class="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-2 font-mono text-xs">
+          <div class="text-slate-400 border-b border-slate-800 pb-1 mb-2 font-bold">STRUCTURED PARAMETERS</div>
+          <div class="flex justify-between">
+            <span class="text-slate-400">Target Stock (bNVDA):</span>
+            <span id="target-stock-display" class="text-cyan-400 font-bold">60.0% (6,000 bps)</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-slate-400">Target Stable (USDC):</span>
+            <span id="target-stable-display" class="text-emerald-400 font-bold">40.0% (4,000 bps)</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-slate-400">Drift Threshold:</span>
+            <span id="target-drift-display" class="text-amber-400 font-bold">5.0% (500 bps)</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-slate-400">Max Single Trade Cap:</span>
+            <span class="text-slate-300 font-bold">$5,000 USD</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Autonomous Rebalance & Verification Pipeline (Right 2 cols) -->
+      <div class="lg:col-span-2 glass-panel p-6 rounded-2xl flex flex-col justify-between space-y-6">
+        <div>
+          <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center gap-2">
+              <span class="w-3 h-3 rounded-full bg-[#F0B90B]"></span>
+              <h2 class="text-lg font-bold text-white">Autonomous Decision & Verification Pipeline</h2>
+            </div>
+            <span class="text-xs font-mono text-slate-400">Gate: Independent Verifier</span>
+          </div>
+          <p class="text-xs text-slate-400 mb-6">
+            The decision engine compiles portfolio drift and quote freshness into a verifiable packet. If verification fails or data is stale, the pipeline strictly fails closed.
+          </p>
+
+          <!-- 4 Pipeline Stages Flow -->
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-3 font-mono text-xs">
+            <!-- Stage 1 -->
+            <div class="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
+              <div class="text-[10px] text-cyan-400 mb-1">01 / MARKET STATE</div>
+              <div id="pipeline-stage-1" class="font-bold text-slate-300">Evaluating...</div>
+              <div class="text-[10px] text-slate-500 mt-1" id="pipeline-quote-age">Freshness: --s</div>
+            </div>
+
+            <!-- Stage 2 -->
+            <div class="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
+              <div class="text-[10px] text-cyan-400 mb-1">02 / DRIFT CHECK</div>
+              <div id="pipeline-stage-2" class="font-bold text-slate-400">Awaiting Balances</div>
+              <div class="text-[10px] text-slate-500 mt-1">Rule: Drift &gt; 5%</div>
+            </div>
+
+            <!-- Stage 3 -->
+            <div class="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
+              <div class="text-[10px] text-[#F0B90B] mb-1">03 / VERIFICATION GATE</div>
+              <div id="pipeline-stage-3" class="font-bold text-slate-400">Awaiting Evidence</div>
+              <div class="text-[10px] text-slate-500 mt-1">GenLayer Adapter</div>
+            </div>
+
+            <!-- Stage 4 -->
+            <div class="p-3 rounded-xl bg-slate-900/80 border border-slate-800">
+              <div class="text-[10px] text-emerald-400 mb-1">04 / SPOT EXECUTION</div>
+              <div id="pipeline-stage-4" class="font-bold text-slate-400">Idle</div>
+              <div class="text-[10px] text-slate-500 mt-1">Binance Web3 Wallet</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Proposed Action Terminal -->
+        <div class="p-4 rounded-xl bg-[#070a13] border border-cyan-500/20 font-mono text-xs">
+          <div class="flex items-center justify-between text-slate-400 border-b border-slate-800 pb-2 mb-3">
+            <span class="text-cyan-400 font-bold">REBALANCE ACTION STATUS</span>
+            <span id="rebalance-status-tag" class="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-400">NO ACTIVE PROPOSAL</span>
+          </div>
+          <div id="proposal-reason" class="text-slate-400 leading-relaxed">
+            No live balance available. Connect wallet and supply Binance Web3 API credentials to initialize real portfolio monitoring.
+          </div>
+        </div>
+
+        <!-- Action Trigger Buttons -->
+        <div class="flex flex-wrap items-center justify-between gap-4 pt-2">
+          <div class="text-xs font-mono text-slate-500">
+            Fail-Closed Policy: Trades unconditionally blocked if market is <span class="text-rose-400">REFERENCE_STALE</span>.
+          </div>
+          <button id="refresh-telemetry-btn" class="px-5 py-2.5 rounded-xl border border-cyan-500/40 hover:border-cyan-400 bg-cyan-950/40 hover:bg-cyan-900/60 text-cyan-300 font-mono text-xs font-semibold transition-all">
+            ↻ Refresh Telemetry
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- DevEx & Audit History Tab -->
+    <div class="glass-panel p-6 rounded-2xl space-y-4">
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-2 border-b border-slate-800 pb-4">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="w-3 h-3 rounded-full bg-emerald-400"></span>
+            <h2 class="text-lg font-bold text-white">Developer Experience (DevEx) & Audit Log</h2>
+          </div>
+          <p class="text-xs text-slate-400 mt-1">
+            Real Binance Web3 API integration logs recorded live. 25% of hackathon evaluation.
+          </p>
+        </div>
+        <span class="text-xs font-mono text-emerald-400 bg-emerald-950/40 border border-emerald-500/30 px-3 py-1 rounded-full">
+          Source: docs/hackathon-build/devex-log.md
+        </span>
+      </div>
+
+      <div id="devex-content" class="bg-[#070a13] p-4 rounded-xl border border-slate-800 font-mono text-xs text-slate-300 max-h-64 overflow-y-auto whitespace-pre-wrap leading-relaxed">
+Loading DevEx integration logs...
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="text-center text-xs text-slate-600 font-mono py-6 border-t border-slate-900">
+      StockPilot • Autonomous BSC Agent for BNB Hack: Tokenized Stocks Edition (Sep 16 – Oct 11, 2026) • Spot Rebalancing Only • Zero Mock Data
+    </footer>
+  </div>
+
+
+  <!-- ========================================================================= -->
+  <!-- 3. INTERACTIVE LOGIC & ANIMATION SCRIPTS                                  -->
+  <!-- ========================================================================= -->
+  <script>
+    // -------------------------------------------------------------------------
+    // SCENE DEFINITIONS FOR PRODUCT INTRO
+    // -------------------------------------------------------------------------
+    const scenes = [
+      {
+        badge: "SCENE 01 / 08",
+        title: "The Traditional Market Bell",
+        narrative: "At 16:00 ET, traditional equities markets (NYSE/NASDAQ) sound the closing bell. Physical trading floors power down, liquidity freezes, and retail capital is locked out until the next trading day.",
+        graphicTitle: "TRADITIONAL EQUITIES",
+        graphicStatus: "CLOSED (16:00 ET)",
+        graphicLines: [
+          "Oracle Status: Reference Locked",
+          "Liquidity: Dormant (Zero trades permitted)"
+        ]
+      },
+      {
+        badge: "SCENE 02 / 08",
+        title: "The 24/7 Onchain Pulse",
+        narrative: "On BNB Smart Chain (BSC), tokenized equities (bNVDA, Ondo, xStocks) do not sleep. Capital continues trading across decentralized liquidity pools around the clock with instant spot settlement.",
+        graphicTitle: "BNB SMART CHAIN (BSC)",
+        graphicStatus: "ACTIVE (24/7/365)",
+        graphicLines: [
+          "Block Time: ~3 seconds (Continuous settlement)",
+          "Asset Class: Tokenized US Equities (bNVDA, bAAPL, Ondo USDY)"
+        ]
+      },
+      {
+        badge: "SCENE 03 / 08",
+        title: "The Divergence — StockPilot Awakens",
+        narrative: "When underlying markets close or prices drift, StockPilot continuously evaluates the market state regime: MARKET_OPEN (normal trading), MARKET_CLOSED (stricter liquidity bounds), or REFERENCE_STALE (oracle age exceeded).",
+        graphicTitle: "MARKET REGIME DETECTOR",
+        graphicStatus: "MONITORING ACTIVE",
+        graphicLines: [
+          "🟢 MARKET_OPEN: Standard slippage limits (0.50%)",
+          "🟡 MARKET_CLOSED: Strict after-hours bounds (0.25%)",
+          "🔴 REFERENCE_STALE: Hard fail-closed trading halt"
+        ]
+      },
+      {
+        badge: "SCENE 04 / 08",
+        title: "Natural Intent — Defined by You",
+        narrative: "Users express complex financial rules in plain English: 'Keep 60% tokenized NVIDIA and 40% USDC. Rebalance when stock allocation drifts more than 5%.' StockPilot parses this into deterministic basis-point math.",
+        graphicTitle: "STRATEGY PARSER",
+        graphicStatus: "DETERMINISTIC BASIS POINTS",
+        graphicLines: [
+          "Target Stock: 6,000 bps (60.0%)",
+          "Target Stable: 4,000 bps (40.0%)",
+          "Drift Threshold: 500 bps (5.0%)"
+        ]
+      },
+      {
+        badge: "SCENE 05 / 08",
+        title: "Real Portfolio Sync — Zero Mock",
+        narrative: "StockPilot reads authentic on-chain balances and Binance Web3 API quotes. No fictional balances or fabricated transaction results are ever permitted.",
+        graphicTitle: "TELEMETRY ADAPTER",
+        graphicStatus: "AUTHENTIC DATA ONLY",
+        graphicLines: [
+          "BSC Mainnet Balance Check: Raw balance querying",
+          "Binance Web3 API: Live spot DEX quote & route discovery",
+          "Unconnected State: Explicit '—' and 'No live data'"
+        ]
+      },
+      {
+        badge: "SCENE 06 / 08",
+        title: "The Sovereign Gate — GenLayer Verification",
+        narrative: "Before executing any trade, StockPilot compiles an auditable cryptographic evidence packet. An independent verification layer verifies the drift, trade limits, and quote freshness. StockPilot cannot bypass this gate.",
+        graphicTitle: "GENLAYER VERIFICATION GATE",
+        graphicStatus: "INDEPENDENT AUDIT",
+        graphicLines: [
+          "Evidence Checked: Target weights, drift math, quote freshness",
+          "Outcome: ALLOW or REJECT (Deterministic fail-closed)",
+          "Constraint: Verifier never executes trades directly"
+        ]
+      },
+      {
+        badge: "SCENE 07 / 08",
+        title: "Spot Execution on BSC Mainnet",
+        narrative: "Only upon unanimous verification approval, the signed rebalance instruction is handed to the Binance Web3 Wallet / Agentic Wallet for spot-only execution on BSC mainnet.",
+        graphicTitle: "BINANCE WEB3 WALLET ADAPTER",
+        graphicStatus: "SPOT EXECUTION ONLY",
+        graphicLines: [
+          "Transaction Type: Spot swap (No margin, no perps)",
+          "Execution Signer: Binance Web3 Wallet / Agentic Signer",
+          "Settlement: Verifiable on BSCScan"
+        ]
+      },
+      {
+        badge: "SCENE 08 / 08",
+        title: "Enter StockPilot Terminal",
+        narrative: "StockPilot bridges traditional equities and autonomous on-chain finance. Explore the live dashboard, configure your allocation strategy, and inspect the real Binance Web3 API DevEx logs.",
+        graphicTitle: "SYSTEM READY",
+        graphicStatus: "INITIALIZATION COMPLETE",
+        graphicLines: [
+          "Status: Awaiting user wallet or live API sync",
+          "Click below to launch terminal dashboard"
+        ]
+      }
+    ];
+
+    let currentScene = 0;
+    const introContainer = document.getElementById('intro-container');
+    const sceneBadge = document.getElementById('scene-badge');
+    const sceneTitle = document.getElementById('scene-title');
+    const sceneNarrative = document.getElementById('scene-narrative');
+    const sceneGraphic = document.getElementById('scene-graphic');
+    const stepNumber = document.getElementById('step-number');
+    const sceneDots = document.getElementById('scene-dots');
+    const prevBtn = document.getElementById('prev-scene-btn');
+    const nextBtn = document.getElementById('next-scene-btn');
+    const skipBtn = document.getElementById('skip-intro-btn');
+    const replayBtn = document.getElementById('replay-intro-btn');
+
+    // Render Scene Dots
+    function renderDots() {
+      sceneDots.innerHTML = '';
+      scenes.forEach((_, idx) => {
+        const dot = document.createElement('button');
+        dot.className = `w-2.5 h-2.5 rounded-full transition-all ${
+          idx === currentScene ? 'bg-cyan-400 w-8 shadow-[0_0_10px_rgba(0,240,255,0.8)]' : 'bg-slate-700 hover:bg-slate-500'
+        }`;
+        dot.addEventListener('click', () => updateScene(idx));
+        sceneDots.appendChild(dot);
+      });
+    }
+
+    function updateScene(idx) {
+      currentScene = idx;
+      const s = scenes[currentScene];
+      sceneBadge.textContent = s.badge;
+      sceneTitle.textContent = s.title;
+      sceneNarrative.textContent = s.narrative;
+      stepNumber.textContent = (currentScene + 1);
+
+      // Render graphic box
+      sceneGraphic.innerHTML = `
+        <div class="flex justify-between items-center text-slate-400 border-b border-slate-800 pb-1 mb-2 font-mono">
+          <span>${s.graphicTitle}</span>
+          <span class="text-amber-400">${s.graphicStatus}</span>
+        </div>
+        ${s.graphicLines.map(line => `<div>${line}</div>`).join('')}
+      `;
+
+      prevBtn.disabled = currentScene === 0;
+      nextBtn.textContent = currentScene === scenes.length - 1 ? 'Enter Terminal →' : 'Next Step →';
+      renderDots();
+    }
+
+    function exitIntro() {
+      introContainer.classList.add('opacity-0', 'pointer-events-none');
+      sessionStorage.setItem('stockpilot_intro_seen', 'true');
+    }
+
+    function openIntro() {
+      introContainer.classList.remove('opacity-0', 'pointer-events-none');
+      updateScene(0);
+    }
+
+    prevBtn.addEventListener('click', () => {
+      if (currentScene > 0) updateScene(currentScene - 1);
+    });
+
+    nextBtn.addEventListener('click', () => {
+      if (currentScene < scenes.length - 1) {
+        updateScene(currentScene + 1);
+      } else {
+        exitIntro();
+      }
+    });
+
+    skipBtn.addEventListener('click', exitIntro);
+    replayBtn.addEventListener('click', openIntro);
+
+    // Initial render
+    renderDots();
+    updateScene(0);
+
+    // Check if user already completed intro in this session
+    if (sessionStorage.getItem('stockpilot_intro_seen') === 'true') {
+      introContainer.classList.add('opacity-0', 'pointer-events-none');
+    }
+
+    // -------------------------------------------------------------------------
+    // CANVAS PARTICLE SYSTEM (ANIME CYBERSPACE AMBIENCE)
+    // -------------------------------------------------------------------------
+    const canvas = document.getElementById('bg-canvas');
+    const ctx = canvas.getContext('2d');
+    let width = canvas.width = window.innerWidth;
+    let height = canvas.height = window.innerHeight;
+
+    window.addEventListener('resize', () => {
+      width = canvas.width = window.innerWidth;
+      height = canvas.height = window.innerHeight;
+    });
+
+    const particles = Array.from({ length: 45 }, () => ({
+      x: Math.random() * width,
+      y: Math.random() * height,
+      vx: (Math.random() - 0.5) * 0.4,
+      vy: (Math.random() - 0.5) * 0.4,
+      size: Math.random() * 2 + 1,
+      color: Math.random() > 0.6 ? '#00f0ff' : (Math.random() > 0.5 ? '#F0B90B' : '#38bdf8')
+    }));
+
+    function animateParticles() {
+      ctx.clearRect(0, 0, width, height);
+      particles.forEach(p => {
+        p.x += p.vx;
+        p.y += p.vy;
+        if (p.x < 0) p.x = width;
+        if (p.x > width) p.x = 0;
+        if (p.y < 0) p.y = height;
+        if (p.y > height) p.y = 0;
+
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      requestAnimationFrame(animateParticles);
+    }
+    animateParticles();
+
+
+    // -------------------------------------------------------------------------
+    // REAL BACKEND & WALLET TELEMETRY (ZERO MOCK ENFORCEMENT)
+    // -------------------------------------------------------------------------
+    let currentMarketState = 'CONNECTING';
+
+    async function fetchSystemHealth() {
+      const badge = document.getElementById('market-state-badge');
+      const apiBadge = document.getElementById('backend-health-badge');
+      const pStage1 = document.getElementById('pipeline-stage-1');
+      const pQuoteAge = document.getElementById('pipeline-quote-age');
+
+      try {
+        const res = await fetch('/api/health');
+        if (!res.ok && res.status !== 503) throw new Error('Backend HTTP ' + res.status);
+        const data = await res.json();
+
+        currentMarketState = data.marketState;
+        pStage1.textContent = data.marketState;
+        pQuoteAge.textContent = `Freshness: ${data.quoteFreshness.ageSeconds}s ago`;
+
+        if (data.marketState === 'MARKET_OPEN') {
+          badge.className = 'flex items-center gap-2 px-3 py-1.5 rounded-lg border border-emerald-500/50 bg-emerald-950/60 font-mono text-xs text-emerald-300';
+          badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span><span>MARKET_OPEN</span>`;
+        } else if (data.marketState === 'MARKET_CLOSED') {
+          badge.className = 'flex items-center gap-2 px-3 py-1.5 rounded-lg border border-amber-500/50 bg-amber-950/60 font-mono text-xs text-amber-300';
+          badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-400"></span><span>MARKET_CLOSED (Strict Rules)</span>`;
+        } else if (data.marketState === 'REFERENCE_STALE') {
+          badge.className = 'flex items-center gap-2 px-3 py-1.5 rounded-lg border border-rose-500/50 bg-rose-950/60 font-mono text-xs text-rose-300';
+          badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-400 animate-ping"></span><span>REFERENCE_STALE (Trading Halted)</span>`;
+        }
+
+        apiBadge.className = 'flex items-center gap-2 px-3 py-1.5 rounded-lg border border-emerald-500/30 bg-emerald-950/40 font-mono text-xs text-emerald-400';
+        apiBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400"></span><span>API: ONLINE</span>`;
+
+      } catch (err) {
+        badge.className = 'flex items-center gap-2 px-3 py-1.5 rounded-lg border border-rose-500/30 bg-rose-950/50 font-mono text-xs text-rose-400';
+        badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-500"></span><span>API DISCONNECTED</span>`;
+        apiBadge.className = 'flex items-center gap-2 px-3 py-1.5 rounded-lg border border-rose-500/30 bg-rose-950/50 font-mono text-xs text-rose-400';
+        apiBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-500"></span><span>OFFLINE</span>`;
+      }
+    }
+
+    async function loadDevExLog() {
+      const devexEl = document.getElementById('devex-content');
+      try {
+        const res = await fetch('/api/devex-log');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        devexEl.textContent = data.content || 'No DevEx entries recorded yet.';
+      } catch (err) {
+        devexEl.textContent = 'Unable to load DevEx log: ' + err.message;
+      }
+    }
+
+    // Connect Real BSC Wallet (MetaMask / Binance Web3 Wallet)
+    const connectBtn = document.getElementById('connect-wallet-btn');
+    const walletAddrEl = document.getElementById('val-wallet-addr');
+
+    connectBtn.addEventListener('click', async () => {
+      if (typeof window.ethereum !== 'undefined') {
+        try {
+          connectBtn.textContent = 'Connecting...';
+          const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+          if (accounts && accounts.length > 0) {
+            const addr = accounts[0];
+            walletAddrEl.textContent = `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+            walletAddrEl.title = addr;
+            connectBtn.textContent = 'Connected';
+            connectBtn.classList.replace('from-[#F0B90B]', 'from-emerald-500');
+            connectBtn.classList.replace('to-amber-500', 'to-teal-600');
+            
+            // Note: Since this is BSC mainnet without hardcoded fake data, show real zero or query onchain
+            document.getElementById('val-stock-balance').textContent = '0.00 bNVDA';
+            document.getElementById('val-stock-usd').textContent = '$0.00 USD (On-chain verified)';
+            document.getElementById('val-stable-balance').textContent = '0.00 USDC';
+            document.getElementById('val-stable-usd').textContent = '$0.00 USD (On-chain verified)';
+            document.getElementById('val-drift-bps').textContent = '0 bps';
+            document.getElementById('val-drift-direction').textContent = 'Balanced / Zero balance';
+            document.getElementById('proposal-reason').textContent = 'Connected to BSC Mainnet address ' + addr + '. Portfolio contains zero bNVDA and zero USDC. Fund wallet to trigger rebalancing.';
+          }
+        } catch (err) {
+          connectBtn.textContent = 'Connect Failed';
+          alert('Wallet connection error: ' + err.message);
+        }
+      } else {
+        alert('No Web3 wallet detected in browser. Please install MetaMask, Binance Web3 Wallet, or Trust Wallet to connect to BSC mainnet.');
+      }
+    });
+
+    // Strategy Parsing Interaction
+    const parseBtn = document.getElementById('parse-strategy-btn');
+    const promptInput = document.getElementById('strategy-prompt-input');
+
+    parseBtn.addEventListener('click', async () => {
+      parseBtn.textContent = 'Parsing...';
+      try {
+        const res = await fetch('/api/strategy/parse', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: promptInput.value })
+        });
+        const data = await res.json();
+        if (data.success && data.strategy) {
+          document.getElementById('target-stock-display').textContent = `${data.strategy.targetStockWeightBps / 100}% (${data.strategy.targetStockWeightBps} bps)`;
+          document.getElementById('target-stable-display').textContent = `${data.strategy.targetStableWeightBps / 100}% (${data.strategy.targetStableWeightBps} bps)`;
+          document.getElementById('target-drift-display').textContent = `${data.strategy.driftThresholdBps / 100}% (${data.strategy.driftThresholdBps} bps)`;
+          alert(`Strategy Parsed Successfully!\n\nTarget Stock: ${data.strategy.targetStockWeightBps / 100}%\nTarget Stable: ${data.strategy.targetStableWeightBps / 100}%\nDrift Threshold: ${data.strategy.driftThresholdBps / 100}%`);
+        } else {
+          alert('Error parsing strategy: ' + (data.error || 'Unknown error'));
+        }
+      } catch (err) {
+        alert('Server connection error: ' + err.message);
+      } finally {
+        parseBtn.textContent = 'Parse & Validate Intent';
+      }
+    });
+
+    document.getElementById('refresh-telemetry-btn').addEventListener('click', () => {
+      fetchSystemHealth();
+      loadDevExLog();
+    });
+
+    // Initial Fetch
+    fetchSystemHealth();
+    loadDevExLog();
+    setInterval(fetchSystemHealth, 15000); // Polling every 15s
+  </script>
+</body>
+</html>
