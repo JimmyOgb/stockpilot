@@ -54,12 +54,18 @@
   - [x] Zero mock policy: No fabricated verification consensus responses in production runtime.
   - [x] 19 dedicated unit tests in `tests/genlayer-adapter.test.ts` covering BUY, SELL, NO_ACTION, math mismatches, wrong directions, excessive spread, market closed, circuit breakers, stale quotes, zero balances, malformed responses, consensus timeouts, and tampered hashes.
 
-- [x] **9. Binance Web3 API Integration (Read-Only Telemetry & Verification)**
+- [x] **9. Binance Web3 API Integration (Read-Only Telemetry, Verification & Preflight Simulation)**
   - [x] Official API documentation audited (`https://web3.binance.com/build`).
   - [x] Exact endpoints documented in `docs/hackathon-build/binance-integration-spec.md`.
   - [x] Authentication headers verified (`X-OC-APIKEY`, `X-OC-TIMESTAMP`, `X-OC-SIGN`, `X-OC-RECV-WINDOW`).
   - [x] Implemented `BinanceMarketDataClient`, `BinanceRwaClient`, `BinanceWalletBalanceClient`, and `BinanceRwaAssetResolver`.
   - [x] Verified live read-only pipeline via smoke test (`npm run test:smoke`): `USER_WALLET_PORTFOLIO_VERIFIED`.
+  - [x] Implemented `BinanceSimulationClient` (`src/binance/simulation-client.ts`) for preflight simulation via `POST /build/api/v1/dex/pre-transaction/simulate` and `GET /build/api/v1/dex/pre-transaction/gas-price`.
+  - [x] Enforces strict sequential order: accepts only proposals with GenLayer `decision === 'VERIFIED'` and `status === 'ALLOW'`.
+  - [x] Fail-closed gates: tamper hash check, proposal ID check, market closed / stale reference, stale quotes, spread risk breaches, circuit breaker limits, invalid/zero-address wallets, on-chain reverts, missing gas telemetry, and KYT blocks.
+  - [x] Cryptographic SHA-256 simulation audit trail (`getAuditTrail()`).
+  - [x] Zero mock policy: Read-only simulation only. Zero broadcasting, zero orders, zero signing, zero funds moved.
+  - [x] 25 dedicated unit tests in `tests/binance-simulation-client.test.ts`. All 170/170 unit tests passing.
 
 - [ ] **10. Spot Transaction Execution**
   - [x] Execution adapter interface designed for both `SWAP` and `RFQ` flows.
@@ -87,6 +93,6 @@
 - [x] `docs/hackathon-build/build-notes.md` with verified API findings.
 - [x] `docs/hackathon-build/binance-integration-spec.md` with full endpoint specifications.
 - [x] `docs/hackathon-build/devex-log.md` with official integration entries.
-- [x] Unit tests for deterministic strategy and risk calculations passing (14/14).
+- [x] Unit tests for deterministic strategy, GenLayer verification, and Binance simulation passing (170/170 across 9 test suites).
 - [x] Working health/status endpoint (`/api/health`).
 - [x] Anime-inspired animated product introduction sequence and live Zero-Mock dashboard.

@@ -365,6 +365,43 @@ Every real Binance integration attempt must record:
   - `npm run build`: `tsc` compiles with 0 errors.
   - `genvm-lint check contracts/rebalance_verifier.py --json`: `ok: true`, 0 errors, 0 warnings.
 
+---
+
+### [2026-09-25 11:25:00 UTC] - Entry 007: Official Binance Transaction Preflight & Simulation Client Implementation
+
+- **Objective**: Implement the preflight transaction simulation gate for an already verified deterministic proposal using the official Binance Web3 Transaction API, strictly adhering to the sequential lifecycle (`PROPOSE → VERIFY → SIMULATE → EXECUTE`) and Zero Mock Policy.
+- **Architecture & Official API Schema Audit**:
+  - Audited official Binance Web3 API documentation:
+    * Primary simulation endpoint: `POST /build/api/v1/dex/pre-transaction/simulate`
+    * Pre-transaction gas price endpoint: `GET /build/api/v1/dex/pre-transaction/gas-price`
+    * Supported chains query: `GET /build/api/v1/dex/pre-transaction/supported/chain`
+  - Auth headers enforced: `X-OC-APIKEY`, `X-OC-TIMESTAMP`, `X-OC-SIGN`, `X-OC-RECV-WINDOW` (60,000ms).
+  - Preflight Guarantee: Simulation is strictly read-only and non-broadcasting. Does NOT sign transactions, execute trades, submit orders, or move funds.
+- **Artifacts Created & Updated**:
+  1. `src/types/index.ts`:
+     - Added `SimulationStatus`, `SimulationDecision`, `BinanceSimulationRequest`, `SimulationPreflightInput`, `BinanceSimulationResult`, and `BinanceSimulationAuditRecord`.
+  2. `src/binance/simulation-client.ts`:
+     - Implemented `BinanceSimulationClient` with defensive fail-closed gates:
+       * **Gate 1: Verification Result Gate**: Strictly accepts proposals with `verificationResult.decision === 'VERIFIED'` and `status === 'ALLOW'`.
+       * **Gate 2: Action Gate**: Skips simulation if proposal action is `NONE` (`NO_ACTION_PROPOSAL`).
+       * **Gate 3: Cryptographic Tamper Gate**: Re-computes SHA-256 evidence hash of canonical payload and rejects on mismatch (`HASH_MISMATCH`).
+       * **Gate 4: Proposal ID Gate**: Rejects on ID mismatch (`ID_MISMATCH`).
+       * **Gate 5: Market Status Gate**: Rejects when market state is `MARKET_CLOSED` or `REFERENCE_STALE`.
+       * **Gate 6: Stale Quote Gate**: Rejects when quote telemetry age exceeds threshold (`STALE_QUOTE`).
+       * **Gate 7: Spread Risk Gate**: Rejects when price spread exceeds `maxSpreadBps` (`SPREAD_RISK_BREACH`).
+       * **Gate 8: Wallet Validation Gate**: Validates EVM address format and rejects zero-address (`0x000...000`) (`INVALID_WALLET`).
+       * **Gate 9: Trade Amount Gate**: Rejects non-positive USD or token amounts (`INVALID_TRADE_AMOUNT`).
+       * **Gate 10: Binance API Response Gate**: Handles error codes (40001, 50000), rate limits (42900), and KYT compliance blocks (40311, 40312, 40313, 40314, 40434) (`RISK_BLOCKED`).
+       * **Gate 11: On-Chain Revert Gate**: Parses simulation revert indicators (`status === 'REVERT'`, simulation codes, revert reasons) (`REVERT`).
+       * **Gate 12: Gas & Fee Telemetry Gate**: Fails closed if gas telemetry is missing or non-positive (`MISSING_FEE_DATA`).
+     - Cryptographic Audit Trail: Generates SHA-256 hash of each simulation evaluation and records immutable audit records via `getAuditTrail()`.
+     - Added helper `getGasPrice(binanceChainId)` for BSC gas price discovery.
+  3. `tests/binance-simulation-client.test.ts`:
+     - Created 25 comprehensive test cases covering BUY/SELL success, rejection gates, tamper detection, market closed, stale quotes, spread breach, invalid/zero-address wallets, API errors, KYT blocks, rate limits, reverts with reasons, missing fee data, HTTP errors, timeouts, audit trail accumulation, and gas price querying.
+- **Verification**:
+  - `npm test`: **170/170 tests passing** across 9 test suites (100% pass rate).
+  - `npm run build`: `tsc` compiles cleanly with 0 errors.
+
 
 
 

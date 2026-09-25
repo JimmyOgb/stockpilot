@@ -75,7 +75,7 @@ flowchart LR
   - Evaluates live spread intelligence against `maxSpreadBps` (tripping `RISK_BLOCKED` when premium is excessive).
 - [x] 126/126 unit & integration tests passing across 7 vitest test suites.
 
-### Phase 3: Independent Verification (COMPLETED) & Transaction Simulation (NEXT)
+### Phase 3: Independent Verification & Transaction Preflight Simulation (COMPLETED)
 - [x] Implement GenLayer Intelligent Contract (`contracts/rebalance_verifier.py`):
   - Pinned runner: `# { "Depends": "py-genlayer:5jycge4q8k23462jtb0b9fyey1s9qz928sz2nbrd9mg4sxqg2qng" }`.
   - Independent mathematical verification of weights, drift, trade directions, bounds, spread limits, zero balances, and quote staleness.
@@ -87,15 +87,18 @@ flowchart LR
   - 100% fail-closed on RPC errors, timeouts, malformed responses, consensus disagreement, or unconfigured contracts.
   - Immutable audit trail recording (`getAuditTrail()`).
   - Completely detached from trade execution, private keys, and wallet signing.
-- [x] Comprehensive Unit Tests (`tests/genlayer-adapter.test.ts`):
-  - 19 dedicated tests covering BUY, SELL, NO_ACTION, math mismatches, wrong directions, excessive spread, market closed, circuit breakers, stale quotes, zero balances, malformed responses, consensus timeouts, and tampered hashes.
-  - 145/145 tests passing across 8 vitest suites.
-- [ ] Implement `BinanceSimulationClient` (`src/binance/simulation-client.ts`):
-  - `POST /api/v1/transaction/simulate`
-  - Revert and gas exhaustion gate.
-- [ ] Enforce sequential lifecycle: `PROPOSE → VERIFY → SIMULATE → EXECUTE`.
+- [x] Implement `BinanceSimulationClient` (`src/binance/simulation-client.ts`):
+  - Official Binance Web3 Transaction API: `POST /build/api/v1/dex/pre-transaction/simulate` and `GET /build/api/v1/dex/pre-transaction/gas-price`.
+  - Sequential Gate: Strictly accepts ONLY proposals that passed GenLayer verification (`decision === 'VERIFIED'`, `status === 'ALLOW'`).
+  - Cryptographic tamper check: Verifies evidence hash match and proposal ID match.
+  - Fail-closed gates: Market closed / stale reference, stale quotes, spread risk breaches, circuit breakers, invalid/zero-address wallets, non-positive amounts, revert reasons, missing gas telemetry, and KYT compliance blocks.
+  - Immutable SHA-256 simulation audit trail (`getAuditTrail()`).
+  - Read-only preflight: Zero broadcasting, zero orders, zero signing, zero funds moved.
+- [x] Comprehensive Unit Tests (`tests/genlayer-adapter.test.ts` & `tests/binance-simulation-client.test.ts`):
+  - 19 GenLayer verification tests + 25 Binance simulation tests.
+  - 170/170 tests passing across 9 vitest suites. Clean TypeScript `npm run build`.
 
-### Phase 4: Execution Pipeline & Agentic Wallet Integration
+### Phase 4: Execution Pipeline & Agentic Wallet Integration (NEXT)
 - [ ] Implement `BinanceTradingClient` (`src/binance/trading-client.ts`):
   - RFQ Quote polling (`GET /api/v1/dex/aggregator/quote`).
   - Signing payload generator (`GET /api/v1/dex/aggregator/swap`).

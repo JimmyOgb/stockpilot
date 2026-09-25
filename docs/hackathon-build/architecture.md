@@ -64,7 +64,7 @@ flowchart TD
     end
 
     subgraph SimulationLayer [4. Transaction Simulation Service - Binance Web3]
-        VerifyDecision -->|ALLOW| SimulateTx[Binance Transaction Simulation API\nPOST /api/v1/transaction/simulate\n- Preflight state override & gas estimation]
+        VerifyDecision -->|ALLOW| SimulateTx[Binance Transaction Simulation API\nPOST /api/v1/dex/pre-transaction/simulate\n- Preflight state override & gas estimation]
         SimulateTx --> SimResult{Simulation Success?}
         SimResult -->|FAIL / REVERT| AbortSim[Fail Closed: Simulation Failed - Abort]
     end
@@ -168,11 +168,26 @@ $$\text{spread} = \frac{\text{onchainPrice} - \text{referencePrice}}{\text{refer
 - **Immutable Audit Trail**:
   - Persists `auditId`, `proposalId`, `strategyId`, `evidenceHash`, `canonicalPayload`, `status`, `decision`, `reason`, `verifiedAt` without exposing credentials or keys.
 
-### 3.7 Transaction Simulation Service (Binance Web3 / Preflight)
-- **Hard Gate**: `PROPOSE → VERIFY → SIMULATE → EXECUTE`.
-- Evaluates transaction viability via Binance Transaction Simulation API (`POST /api/v1/transaction/simulate`) or Agentic Wallet preflight before any signing request is triggered.
-- Detects contract reverts, insufficient allowance, slippage breaches, and gas exhaustion.
-- **A failed simulation terminates the execution flow immediately**.
+### 3.7 Transaction Simulation Service (Binance Web3 — `src/binance/simulation-client.ts`)
+- **Strict Sequential Order**: `REAL TELEMETRY → DETERMINISTIC STRATEGY → GENLAYER VERIFICATION → BINANCE TRANSACTION SIMULATION → AGENTIC WALLET EXECUTION`.
+- **Preflight Only**: Evaluates transaction viability via Binance Web3 Transaction API (`POST /build/api/v1/dex/pre-transaction/simulate`) before any signing request or execution dispatch is attempted.
+- **Read-Only Guarantee**: Never broadcasts transactions, holds private keys, submits orders, or moves funds.
+- **Fail-Closed Guardrails**:
+  1. Unverified proposal (`decision !== 'VERIFIED'` or `status !== 'ALLOW'`) $\rightarrow$ immediately rejected.
+  2. Proposal action `NONE` $\rightarrow$ simulation skipped (`NO_ACTION_PROPOSAL`).
+  3. Evidence hash mismatch (tampered payload) $\rightarrow$ rejected (`HASH_MISMATCH`).
+  4. Proposal ID mismatch $\rightarrow$ rejected (`ID_MISMATCH`).
+  5. Market closed (`canonicalPayload.marketState !== 'MARKET_OPEN'`) $\rightarrow$ rejected (`MARKET_CLOSED`).
+  6. Stale quote telemetry ($> 60\text{s}$) $\rightarrow$ rejected (`STALE_QUOTE`).
+  7. Spread risk breach ($> \text{maxSpreadBps}$) $\rightarrow$ rejected (`SPREAD_RISK_BREACH`).
+  8. Invalid / zero-address wallet $\rightarrow$ rejected (`INVALID_WALLET`).
+  9. Non-positive trade amounts $\rightarrow$ rejected (`INVALID_TRADE_AMOUNT`).
+  10. Binance API error response $\rightarrow$ rejected (`SIMULATION_ERROR`).
+  11. Binance KYT risk block code (`40311`, `40312`, `40313`, `40314`, `40434`) $\rightarrow$ rejected (`RISK_BLOCKED`).
+  12. On-chain revert with explicit reason $\rightarrow$ rejected (`REVERT`).
+  13. Missing or invalid gas/fee data $\rightarrow$ rejected (`MISSING_FEE_DATA`).
+- **Cryptographic Audit Trail**:
+  - Every simulation evaluation creates an immutable in-memory audit record with a deterministic SHA-256 simulation hash. Accessible via `getAuditTrail()`.
 
 ### 3.8 Execution Authorization & Agentic Wallet Integration (`src/binance/`, `.agents/skills/`)
 StockPilot clearly delineates responsibilities between programmatic API calls and Agentic Wallet skills:

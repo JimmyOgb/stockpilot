@@ -293,3 +293,79 @@ export interface SystemHealthStatus {
     executionWallet: 'READY' | 'UNCONFIGURED';
   };
 }
+
+// ============================================================================
+// Binance Transaction Preflight / Simulation Types
+// ============================================================================
+
+export type SimulationStatus =
+  | 'SUCCESS'
+  | 'REVERT'
+  | 'SIMULATION_ERROR'
+  | 'UNVERIFIED_PROPOSAL'
+  | 'NO_ACTION_PROPOSAL'
+  | 'HASH_MISMATCH'
+  | 'ID_MISMATCH'
+  | 'MARKET_CLOSED'
+  | 'STALE_QUOTE'
+  | 'SPREAD_RISK_BREACH'
+  | 'CIRCUIT_BREAKER_BREACH'
+  | 'INVALID_WALLET'
+  | 'INVALID_TRADE_AMOUNT'
+  | 'MISSING_FEE_DATA'
+  | 'INSUFFICIENT_FUNDS'
+  | 'RISK_BLOCKED'
+  | 'RATE_LIMITED'
+  | 'NETWORK_ERROR';
+
+export type SimulationDecision = 'SIMULATED_OK' | 'SIMULATION_FAILED';
+
+export interface BinanceSimulationRequest {
+  binanceChainId: string;
+  fromAddress: string;
+  toAddress: string;
+  calldata?: string;
+  value?: string;
+  gasLimit?: string;
+  gasPrice?: string;
+}
+
+export interface SimulationPreflightInput {
+  verificationResult: VerificationResult;
+  canonicalPayload: CanonicalEvidencePayload;
+  walletAddress: string;
+  maxAllowedQuoteAgeSeconds?: number;
+  customTx?: Partial<BinanceSimulationRequest>;
+}
+
+export interface BinanceSimulationResult {
+  decision: SimulationDecision;
+  status: SimulationStatus;
+  simulationHash: string;
+  proposalId: string;
+  evidenceHash: string;
+  gasUsed: bigint | null;
+  gasLimit: bigint | null;
+  gasPriceGwei: number | null;
+  estimatedFeeBnb: number | null;
+  estimatedFeeUsd: number | null;
+  revertReason: string | null;
+  rawResponse: Record<string, unknown> | null;
+  simulatedAt: number;
+  reason: string;
+}
+
+export interface BinanceSimulationAuditRecord {
+  auditId: string;
+  proposalId: string;
+  evidenceHash: string;
+  simulationHash: string;
+  decision: SimulationDecision;
+  status: SimulationStatus;
+  gasUsed: string | null;
+  gasPriceGwei: number | null;
+  estimatedFeeBnb: string | null;
+  simulatedAt: number;
+  reason: string;
+}
+
