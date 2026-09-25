@@ -33,7 +33,7 @@ async function runMarketDataSmokeTest(): Promise<void> {
   const maskedKey = `${apiKey.slice(0, 4)}...${apiKey.slice(-4)}`;
   console.log(`[INFO] Authenticating using API Key: ${maskedKey}`);
   console.log('[INFO] Target Network: BNB Smart Chain (BSC Mainnet / Chain ID: 56)');
-  console.log('[INFO] Target Token: bNVDA (0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495)');
+  console.log('[INFO] Target Token: NVDAB (0x02fca66c1d1afb4e2a7884261eb00f63598a7436)');
   console.log('---------------------------------------------------------------');
 
   const signer = new BinanceRequestSigner({
@@ -47,10 +47,10 @@ async function runMarketDataSmokeTest(): Promise<void> {
   });
 
   // Step 1: Token Search
-  console.log('\n[STEP 1] Executing token search for bNVDA...');
+  console.log('\n[STEP 1] Executing token search for NVDAB...');
   const searchStartTime = Date.now();
   const searchResult = await client.searchToken({
-    keyword: 'bNVDA',
+    keyword: 'NVDAB',
     chainId: 56
   });
   const searchLatency = Date.now() - searchStartTime;
@@ -70,12 +70,12 @@ async function runMarketDataSmokeTest(): Promise<void> {
   }
 
   // Step 2: Spot Price Query
-  console.log('\n[STEP 2] Querying live spot price for bNVDA...');
+  console.log('\n[STEP 2] Querying live spot price for NVDAB...');
   const priceStartTime = Date.now();
   const priceResult = await client.getPrices([
     {
       chainId: 56,
-      contractAddress: '0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495'
+      contractAddress: '0x02fca66c1d1afb4e2a7884261eb00f63598a7436'
     }
   ]);
   const priceLatency = Date.now() - priceStartTime;

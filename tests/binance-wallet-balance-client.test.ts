@@ -25,7 +25,7 @@ describe('BinanceWalletBalanceClient', () => {
   const signer = new BinanceRequestSigner({ apiKey: testApiKey, apiSecret: testApiSecret });
 
   const testWallet = '0x1234567890123456789012345678901234567890';
-  const bNvdaContract = '0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495';
+  const bNvdaContract = '0x02fca66c1d1afb4e2a7884261eb00f63598a7436'; // Live registered bStocks NVIDIA (NVDAB)
   const usdcContract = '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d';
 
   const defaultTargets: TokenBalanceTarget[] = [
@@ -52,8 +52,9 @@ describe('BinanceWalletBalanceClient', () => {
   describe('Address Validation & Helper Utilities', () => {
     it('isValidEvmAddress correctly validates 40-character hex addresses with 0x prefix', () => {
       expect(isValidEvmAddress('0x1234567890123456789012345678901234567890')).toBe(true);
-      expect(isValidEvmAddress('0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495')).toBe(true);
-      expect(isValidEvmAddress('0xa34c5e0abe843e10461e2c9586ea03e55dbcc495')).toBe(true);
+      expect(isValidEvmAddress('0x02fca66c1d1afb4e2a7884261eb00f63598a7436')).toBe(true);
+      expect(isValidEvmAddress('0x02FCA66C1D1AFB4E2A7884261EB00F63598A7436')).toBe(true);
+      expect(isValidEvmAddress('0x0000000000000000000000000000000000000000')).toBe(false); // Zero address rejected
 
       // Invalid formats
       expect(isValidEvmAddress('0x123')).toBe(false);

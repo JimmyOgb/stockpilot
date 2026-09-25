@@ -1,10 +1,11 @@
 # Binance Web3 API Integration Specification
 
-> **Document Status**: Official Documentation & Skills Hub Alignment  
+> **Document Status**: Official Documentation & Skills Hub Alignment (Live Registry Validated)  
 > **Target Network**: BNB Smart Chain (BSC Mainnet — Chain ID: 56)  
 > **Hackathon**: BNB Hack: Tokenized Stocks Edition (Sep 16 – Oct 11, 2026)  
-> **Core Asset**: `bNVDA` (Backed NVIDIA — `0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495`) & `USDC` (`0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d`)  
-> **Zero Mock Compliance**: Verified against official documentation and installed Binance skills (`binance-tokenized-securities-info`, `binance-agentic-wallet`).  
+> **Core Asset**: `NVDA` Tokenized Equity — Backed NVIDIA (`NVDAB` — `0x02fca66c1d1afb4e2a7884261eb00f63598a7436`) & Ondo NVIDIA (`NVDAon` — `0xa9ee28c80f960b889dfbd1902055218cba016f75`) paired with `USDC` (`0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d`)  
+> **Registry Finding**: `0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495` marked `[STALE / INVALIDATED BY LIVE BINANCE REGISTRY]`.  
+> **Zero Mock Compliance**: Verified live against Binance Web3 API and BSC Mainnet JSON-RPC (`eth_getCode` & `eth_call`).  
 
 ---
 
@@ -284,10 +285,12 @@ StockPilot integrates with BNB Agent Studio to operate as an autonomous rebalanc
 
 ---
 
-## 3. Supported Asset Directory on BSC Mainnet
+## 3. Supported Asset Directory on BSC Mainnet (Live Registry Validated)
 
-| Asset | Contract Address | Decimals | Issuer / Model | Notes |
+| Asset | Contract Address | Decimals | Issuer / Platform | Status & Live Findings |
 |---|---|---|---|---|
-| **bNVDA** | `0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495` | 18 | Backed Finance | 1:1 backed collateralized tracker. Primary MVP asset. |
-| **USDC** | `0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d` | 18 | Binance-Peg USDC | High liquidity settlement asset. |
-| **USDY** | `0x608593d17A2decBbc4399e4185bE4922F97eD32E` | 18 | Ondo Finance | Secondary tokenized yield instrument. |
+| **NVDAB** | `0x02fca66c1d1afb4e2a7884261eb00f63598a7436` | 18 | Backed Finance (bStocks) | **ACTIVE LIVE MVP**. Deployed contract with verified bytecode on BSC Mainnet (Chain 56). Spot price and spread ($226.32 / $226.14, +0.0778%) live via Binance Web3 RWA API. |
+| **NVDAon** | `0xa9ee28c80f960b889dfbd1902055218cba016f75` | 18 | Ondo Finance | **ACTIVE LIVE ALTERNATIVE**. Deployed contract on BSC Mainnet (Chain 56). Spot price ($226.74, +0.1715% spread). |
+| **USDC** | `0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d` | 18 | Binance-Peg USDC | High liquidity settlement counter-asset on BSC. Dual-source verified. |
+| **bNVDA** (Historical Spec) | `0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495` | 18 | Unknown | **`[STALE / INVALIDATED BY LIVE BINANCE REGISTRY]`**. Unregistered on Binance Web3 RWA API; `eth_getCode` returns `0x` (zero deployed bytecode). Rejected by StockPilot runtime. |
+| **USDY** | `0x608593d17A2decBbc4399e4185bE4922F97eD32E` | 18 | Ondo Finance | Secondary tokenized yield instrument on BSC. |

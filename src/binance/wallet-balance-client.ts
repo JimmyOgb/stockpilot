@@ -66,13 +66,24 @@ export interface WalletPortfolioBalanceResult {
   checkedAt: number;
 }
 
+export const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
+export const STALE_A34C_BNVDA_ADDRESS = '0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495';
+
 /**
  * Validates Ethereum / BSC hex wallet addresses (0x + 40 hex chars).
+ * Rejects the zero address (0x000...000) for active application portfolio wallets.
  */
-export function isValidEvmAddress(address: string): boolean {
+export function isValidEvmAddress(
+  address: string,
+  options?: { allowZeroAddress?: boolean }
+): boolean {
   if (typeof address !== 'string') return false;
   const trimmed = address.trim();
-  return /^0x[0-9a-fA-F]{40}$/.test(trimmed);
+  if (!/^0x[0-9a-fA-F]{40}$/.test(trimmed)) return false;
+  if (!options?.allowZeroAddress && trimmed.toLowerCase() === ZERO_ADDRESS.toLowerCase()) {
+    return false;
+  }
+  return true;
 }
 
 /**

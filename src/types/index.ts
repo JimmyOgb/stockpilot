@@ -5,12 +5,26 @@
 
 export type MarketState = 'MARKET_OPEN' | 'MARKET_CLOSED' | 'REFERENCE_STALE';
 
+export type RwaIssuerPlatform = 'bStocks' | 'Ondo' | 'xStocks';
+
+export interface RwaAssetDescriptor {
+  underlyingTicker: string;          // e.g. "NVDA"
+  issuerPlatform: RwaIssuerPlatform; // e.g. "bStocks"
+  tokenSymbol: string;               // e.g. "NVDAB"
+  tokenContractAddress: string;      // e.g. "0x02fca66c1d1afb4e2a7884261eb00f63598a7436"
+  binanceChainId: string;            // e.g. "56"
+  decimals: number;                  // 18
+  platformId?: number;
+}
+
 export interface StrategyConfig {
   id: string;
   name: string;
   userPrompt: string;
   stockSymbol: string;
   stockAddress: string;
+  underlyingTicker?: string;
+  issuerPlatform?: RwaIssuerPlatform;
   stableSymbol: string;
   stableAddress: string;
   targetStockWeightBps: number;  // 100 bps = 1.0% (e.g. 6000 bps = 60.0%)

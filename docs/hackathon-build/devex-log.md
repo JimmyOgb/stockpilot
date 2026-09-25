@@ -235,6 +235,44 @@ Every real Binance integration attempt must record:
   - `npm test`: 92/92 tests passing across 5 test suites (100% pass rate).
   - `npm run build`: `tsc` compiles with 0 errors.
 
+---
+
+### Entry #012: Production Smoke Test Discovery & Registry-Driven Asset Resolution
+- **Date**: 2026-09-25
+- **Milestone**: Live Read-Only Integration Smoke Test & Critical Production Asset Discovery
+- **Context**:
+  - StockPilot executed its first end-to-end live read-only smoke test (`scripts/smoke-test-readonly-integration.ts` via `npm run test:smoke`) against real Binance Web3 API and live BSC Mainnet JSON-RPC (`https://bsc-dataseed.binance.org/`).
+  - Strict Zero Mock enforcement yielded critical live production discoveries rather than masking them with fake data.
+- **Critical Production Discoveries**:
+  1. **Invalidated Stale Address (`0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495`)**:
+     - The address from early hackathon specifications is **unindexed on the Binance Web3 RWA registry** (`No valid RWA tokens found in the provided addresses`).
+     - BSC Mainnet `eth_getCode` returned `0x` (zero deployed bytecode).
+     - The address has been permanently marked `[STALE / INVALIDATED BY LIVE BINANCE REGISTRY]` and rejected by StockPilot runtime.
+  2. **Live Registry-Driven RWA Discovery**:
+     - Querying `keyword="bNVDA"` returns 0 results because Binance indexes tokenized equities by **underlying equity ticker** (`keyword="NVDA"`).
+     - Under `NVDA`, Binance's live registry returns two live registered assets on BSC Mainnet (`binanceChainId: 56`):
+       * **bStocks NVIDIA**: Symbol `NVDAB`, Contract: `0x02fca66c1d1afb4e2a7884261eb00f63598a7436` (Deployed contract on BSC).
+       * **Ondo NVIDIA**: Symbol `NVDAon`, Contract: `0xa9ee28c80f960b889dfbd1902055218cba016f75` (Deployed contract on BSC).
+  3. **Live Dual-Price Discovery & Spread Intelligence**:
+     - For `NVDAB`: On-chain token price: **$226.32**, US reference stock price: **$226.14**, Deterministic spread: **+0.0778%**.
+     - For `NVDAon`: On-chain token price: **$226.74**, US reference stock price: **$226.35**, Deterministic spread: **+0.1715%**.
+  4. **Live Underlying Market Session**:
+     - RWA underlying market query on `0x02fca66c1d1afb4e2a7884261eb00f63598a7436` returned `status: OPEN`, `openState: true`, mapping dynamically to StockPilot's `MARKET_OPEN` state.
+  5. **Wallet Verification Distinction (Zero-Address vs User Portfolio)**:
+     - The smoke test used `0x0000000000000000000000000000000000000000` to verify node connectivity and 0-balance plumbing.
+     - While both Binance API and BSC RPC matched on `0` units for `USDC` and `NVDAB`, this is **not** evidence of a funded user portfolio.
+     - Reclassified smoke-test outputs: `INFRASTRUCTURE_VERIFIED` (plumbing only) vs `USER_WALLET_PORTFOLIO_VERIFIED`.
+     - `0x000...000` is now strictly rejected with `INVALID_WALLET` in application portfolio operations.
+- **Architectural Implementation**:
+  1. `src/binance/asset-resolver.ts`: Created `BinanceRwaAssetResolver` providing dynamic, registry-driven discovery mapping `(underlyingTicker + issuerPlatform)` to verified live BSC contracts. Strictly rejects stale `0xA34C...`, validates EVM format, ensures chain 56, prevents cross-platform substitution (`bStocks` != `Ondo`), and optionally validates on-chain bytecode via `eth_getCode`.
+  2. `src/binance/wallet-balance-client.ts`: Updated `isValidEvmAddress` to strictly reject the zero address by default.
+  3. `tests/binance-asset-resolver.test.ts`: Added 12 hermetic unit tests.
+- **Verification**:
+  - `npm test`: **104/104 tests passing** across 6 test suites (100% pass rate).
+  - `npm run build`: `tsc` compiles with 0 errors.
+  - Live smoke test (`npm run test:smoke`): All live endpoints succeeded and logged `INFRASTRUCTURE_VERIFIED`.
+
+
 
 
 

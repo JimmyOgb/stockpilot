@@ -8,19 +8,27 @@
  * Strict Security & Zero-Mock Rules:
  * - Read-only operations ONLY. No private key, no transaction signing, no swaps/orders/RFQs, no funds moved.
  * - ZERO MOCK: Never fabricates or substitutes fake data.
+ * - Registry-driven: Discovers live token contracts dynamically via Binance Web3 RWA API.
  * - Credential hygiene: Never logs API secrets, full API keys, signatures, or auth headers.
  */
 
 import 'dotenv/config';
 import { BinanceRequestSigner } from '../src/binance/request-signer.js';
 import { BinanceRwaClient, BinanceRwaMarketStateProvider } from '../src/binance/rwa-client.js';
-import { BinanceWalletBalanceClient, TokenBalanceTarget, isValidEvmAddress } from '../src/binance/wallet-balance-client.js';
+import { BinanceRwaAssetResolver } from '../src/binance/asset-resolver.js';
+import {
+  BinanceWalletBalanceClient,
+  TokenBalanceTarget,
+  isValidEvmAddress,
+  ZERO_ADDRESS,
+  STALE_A34C_BNVDA_ADDRESS
+} from '../src/binance/wallet-balance-client.js';
 
 export const CONFIGURED_ASSETS = {
-  bNVDA_configured: {
-    symbol: 'bNVDA',
-    name: 'Backed NVIDIA Corp (Configured Spec)',
-    contractAddress: '0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495',
+  // Stale spec address for regression and rejection verification
+  stale_bNVDA_spec: {
+    symbol: 'bNVDA (Stale Spec)',
+    contractAddress: STALE_A34C_BNVDA_ADDRESS,
     decimals: 18,
     binanceChainId: '56'
   },
@@ -89,6 +97,14 @@ export function maskApiKey(key: string): string {
   return `${key.slice(0, 4)}...${key.slice(-4)}`;
 }
 
+export function maskWalletAddress(addr: string): string {
+  if (addr.toLowerCase() === ZERO_ADDRESS.toLowerCase()) {
+    return '0x0000...0000 (ZERO ADDRESS)';
+  }
+  if (addr.length < 10) return addr;
+  return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+}
+
 export async function runIntegrationSmokeTest(): Promise<void> {
   console.log('========================================================================');
   console.log('StockPilot — Real Read-Only Integration Smoke Test (Live BSC & Binance)');
@@ -107,21 +123,32 @@ export async function runIntegrationSmokeTest(): Promise<void> {
 
   const { apiKey, apiSecret, bscRpcUrl, walletAddress } = envCheck.resolvedConfig;
 
-  if (!isValidEvmAddress(walletAddress)) {
-    console.error(`[STOPPED] Configured wallet address is not a valid EVM address: "${walletAddress}"`);
+  const isZeroAddress = walletAddress.toLowerCase() === ZERO_ADDRESS.toLowerCase();
+  const isValidWallet = isValidEvmAddress(walletAddress, { allowZeroAddress: true });
+
+  if (!isValidWallet) {
+    console.error(`[STOPPED] Configured wallet address is not a valid EVM address format: "${walletAddress}"`);
     process.exit(1);
   }
+
+  const smokeTestMode = isZeroAddress ? 'INFRASTRUCTURE_VERIFICATION_ONLY' : 'USER_WALLET_PORTFOLIO_VERIFIED';
 
   console.log('[SECURITY PRE-FLIGHT]');
   console.log(`- Authenticating API Key: ${maskApiKey(apiKey)}`);
   console.log('- API Secret: [PROTECTED — NEVER PRINTED]');
-  console.log(`- Target Wallet: ${walletAddress}`);
+  console.log(`- Target Wallet: ${maskWalletAddress(walletAddress)}`);
+  console.log(`- Verification Mode: ${smokeTestMode}`);
+  if (isZeroAddress) {
+    console.log('  * NOTICE: Zero address (0x000...000) is strictly rejected as an active user portfolio.');
+    console.log('  * Running in INFRASTRUCTURE_VERIFIED mode to test node & API plumbing only.');
+  }
   console.log(`- BSC JSON-RPC: ${bscRpcUrl}`);
   console.log('- Private Keys: NONE (Read-only execution)');
   console.log('- Fund Movement / Trades / Quotes: DISABLED\n');
 
   const signer = new BinanceRequestSigner({ apiKey, apiSecret });
   const rwaClient = new BinanceRwaClient({ signer });
+  const assetResolver = new BinanceRwaAssetResolver(rwaClient, bscRpcUrl);
   const balanceClient = new BinanceWalletBalanceClient({
     signer,
     bscRpcUrl
@@ -134,141 +161,105 @@ export async function runIntegrationSmokeTest(): Promise<void> {
   }
 
   // -------------------------------------------------------------------------
-  // STEP 1 — Binance RWA Search
+  // STEP 1 — Registry-Driven Binance RWA Search & Resolution
   // -------------------------------------------------------------------------
   log('------------------------------------------------------------------------');
-  log('[STEP 1] Binance RWA Search: Searching for bNVDA asset metadata');
+  log('[STEP 1] Registry-Driven Binance RWA Asset Discovery (NVDA + bStocks)');
   log('------------------------------------------------------------------------');
-  const step1Start = Date.now();
-  const searchResult = await rwaClient.searchRwaToken({ keyword: 'bNVDA' });
-  const step1Latency = Date.now() - step1Start;
 
-  log(`- Keyword Query: "bNVDA"`);
-  log(`- Request Latency: ${step1Latency}ms`);
-  log(`- Client Status: ${searchResult.status}`);
+  // 1A: Prove keyword="bNVDA" returns 0 results on Binance Web3 RWA registry
+  const step1AStart = Date.now();
+  const searchDirectResult = await rwaClient.searchRwaToken({ keyword: 'bNVDA' });
+  const step1ALatency = Date.now() - step1AStart;
+  log(`- [1A] Direct Query keyword="bNVDA":`);
+  log(`  * Latency: ${step1ALatency}ms | Status: ${searchDirectResult.status}`);
+  log(`  * Outcome: ${searchDirectResult.status === 'UNAVAILABLE' ? 'Expected 0 results (Binance indexes equities by underlying ticker)' : 'Results returned'}`);
 
-  if (searchResult.status !== 'LIVE' || !searchResult.data || searchResult.data.length === 0) {
-    log(`[INFO] Search for keyword "bNVDA" returned: ${searchResult.status} (${searchResult.error?.message ?? '0 results'}).`);
-    log(`       Binance Web3 RWA registry indexes assets by underlying stock ticker.`);
-  }
+  // 1B: Registry-driven resolution using underlying ticker "NVDA" and issuer "bStocks"
+  log(`\n- [1B] Dynamic Asset Resolution: underlyingTicker="NVDA", issuerPlatform="bStocks"...`);
+  const step1BStart = Date.now();
+  const resolvedBStocks = await assetResolver.resolveAsset({
+    underlyingTicker: 'NVDA',
+    issuerPlatform: 'bStocks',
+    targetChainId: '56',
+    verifyBytecode: true
+  });
+  const step1BLatency = Date.now() - step1BStart;
 
-  // Discovery query with underlying ticker "NVDA"
-  log(`\n- Secondary RWA Discovery Query: keyword="NVDA"...`);
-  const discoveryStart = Date.now();
-  const discoveryResult = await rwaClient.searchRwaToken({ keyword: 'NVDA' });
-  const discoveryLatency = Date.now() - discoveryStart;
+  log(`  * Resolution Latency: ${step1BLatency}ms`);
+  log(`  * Discovered Underlying Ticker: ${resolvedBStocks.underlyingTicker}`);
+  log(`  * Company Name: ${resolvedBStocks.companyName}`);
+  log(`  * Resolved Issuer Platform: ${resolvedBStocks.issuerPlatform}`);
+  log(`  * Resolved Token Symbol: ${resolvedBStocks.tokenSymbol}`);
+  log(`  * Resolved BSC Contract: ${resolvedBStocks.tokenContractAddress}`);
+  log(`  * Binance Chain ID: ${resolvedBStocks.binanceChainId}`);
+  log(`  * On-Chain Bytecode Verified: ${resolvedBStocks.bytecodeVerified ? 'YES (Live contract deployed)' : 'NO'}`);
 
-  log(`- Discovery Latency: ${discoveryLatency}ms`);
-  log(`- Discovery Status: ${discoveryResult.status}`);
+  // 1C: Registry-driven resolution for Ondo (proves platform discrimination)
+  log(`\n- [1C] Platform Discrimination: underlyingTicker="NVDA", issuerPlatform="Ondo"...`);
+  const resolvedOndo = await assetResolver.resolveAsset({
+    underlyingTicker: 'NVDA',
+    issuerPlatform: 'Ondo',
+    targetChainId: '56'
+  });
+  log(`  * Discovered Ondo Symbol: ${resolvedOndo.tokenSymbol} (${resolvedOndo.tokenContractAddress})`);
+  log(`  * Non-Substitution Check: bStocks (${resolvedBStocks.tokenSymbol}) !== Ondo (${resolvedOndo.tokenSymbol}): ${resolvedBStocks.tokenSymbol !== resolvedOndo.tokenSymbol ? 'PASS' : 'FAIL'}`);
 
-  let liveBNvdaAsset: { tokenSymbol: string; tokenContractAddress: string; binanceChainId: string; platformId: number } | null = null;
-  let liveOndoNvdaAsset: { tokenSymbol: string; tokenContractAddress: string; binanceChainId: string; platformId: number } | null = null;
-
-  if (discoveryResult.status === 'LIVE' && discoveryResult.data && discoveryResult.data.length > 0) {
-    const item = discoveryResult.data[0];
-    log(`- Ticker: ${item.ticker}`);
-    log(`- Company Name: ${item.companyName}`);
-    log(`- Total Assets Registered across chains: ${item.assets.length}`);
-
-    for (const a of item.assets) {
-      log(`  * Symbol: ${a.tokenSymbol} | Chain: ${a.binanceChainId} | Platform: ${a.platformId} | Contract: ${a.tokenContractAddress}`);
-      if (a.binanceChainId === '56') {
-        if (a.tokenSymbol === 'NVDAB') liveBNvdaAsset = a;
-        if (a.tokenSymbol === 'NVDAon') liveOndoNvdaAsset = a;
-      }
-    }
-
-    log(`\n- Contract Address Verification against Configured bNVDA:`);
-    log(`  * Configured Address in StockPilot: ${CONFIGURED_ASSETS.bNVDA_configured.contractAddress}`);
-    if (liveBNvdaAsset) {
-      log(`  * Live bStocks NVIDIA (NVDAB) Address: ${liveBNvdaAsset.tokenContractAddress}`);
-      const matches = liveBNvdaAsset.tokenContractAddress.toLowerCase() === CONFIGURED_ASSETS.bNVDA_configured.contractAddress.toLowerCase();
-      log(`  * Exact Match: ${matches ? 'YES' : 'NO (Live registered contract on BSC is 0x02fca66c1d1afb4e2a7884261eb00f63598a7436)'}`);
-    }
-  }
+  // 1D: Stale spec contract validation & rejection
+  log(`\n- [1D] Stale Address Rejection Check:`);
+  log(`  * Historical spec address: ${STALE_A34C_BNVDA_ADDRESS}`);
+  const matchesStale = resolvedBStocks.tokenContractAddress.toLowerCase() === STALE_A34C_BNVDA_ADDRESS.toLowerCase();
+  log(`  * Is Stale Address in Production? ${matchesStale ? 'YES (CRITICAL REGRESSION)' : 'NO (Stale address rejected, live NVDAB deployed)'}`);
 
   // -------------------------------------------------------------------------
-  // STEP 2 — Binance RWA Price
+  // STEP 2 — Binance RWA Price & Deterministic Spread
   // -------------------------------------------------------------------------
   log('\n------------------------------------------------------------------------');
-  log('[STEP 2] Binance RWA Price: Querying dual-price discovery');
+  log('[STEP 2] Binance RWA Price: Dual-Price Discovery for Discovered Asset');
   log('------------------------------------------------------------------------');
 
-  // Query 2A: Configured bNVDA address
-  log(`- [2A] Querying configured bNVDA (${CONFIGURED_ASSETS.bNVDA_configured.contractAddress})...`);
-  const step2AStart = Date.now();
-  const priceResultA = await rwaClient.getRwaPriceAndSpread({
-    binanceChainId: CONFIGURED_ASSETS.bNVDA_configured.binanceChainId,
-    tokenContractAddresses: [CONFIGURED_ASSETS.bNVDA_configured.contractAddress]
+  const step2Start = Date.now();
+  const priceResult = await rwaClient.getRwaPriceAndSpread({
+    binanceChainId: resolvedBStocks.binanceChainId,
+    tokenContractAddresses: [resolvedBStocks.tokenContractAddress, resolvedOndo.tokenContractAddress]
   });
-  const step2ALatency = Date.now() - step2AStart;
-  log(`  * Latency: ${step2ALatency}ms | Status: ${priceResultA.status}`);
-  if (priceResultA.error) {
-    log(`  * Result: ${priceResultA.error.message} (Fail-closed: no fabricated price)`);
-  }
+  const step2Latency = Date.now() - step2Start;
 
-  // Query 2B: Live registered RWA tokens on BSC Mainnet (bStocks NVDAB & Ondo NVDAon)
-  const realRwaAddresses = [
-    liveBNvdaAsset?.tokenContractAddress || '0x02fca66c1d1afb4e2a7884261eb00f63598a7436',
-    liveOndoNvdaAsset?.tokenContractAddress || '0xa9ee28c80f960b889dfbd1902055218cba016f75'
-  ];
-
-  log(`\n- [2B] Querying live registered RWA tokens on BSC Mainnet...`);
-  const step2BStart = Date.now();
-  const priceResultB = await rwaClient.getRwaPriceAndSpread({
-    binanceChainId: '56',
-    tokenContractAddresses: realRwaAddresses
-  });
-  const step2BLatency = Date.now() - step2BStart;
-  log(`  * Latency: ${step2BLatency}ms | Status: ${priceResultB.status}`);
-
-  if (priceResultB.status === 'LIVE' && priceResultB.data) {
-    for (const p of priceResultB.data) {
-      const sym = p.tokenContractAddress.toLowerCase() === realRwaAddresses[0].toLowerCase() ? 'NVDAB (bStocks)' : 'NVDAon (Ondo)';
-      log(`  * Asset: ${sym} (${p.tokenContractAddress})`);
+  log(`- Request Latency: ${step2Latency}ms | Status: ${priceResult.status}`);
+  if (priceResult.status === 'LIVE' && priceResult.data) {
+    for (const p of priceResult.data) {
+      const isBStocks = p.tokenContractAddress.toLowerCase() === resolvedBStocks.tokenContractAddress.toLowerCase();
+      const label = isBStocks ? 'NVDAB (bStocks)' : 'NVDAon (Ondo)';
+      log(`  * Asset: ${label} (${p.tokenContractAddress})`);
       log(`    - Token Price (On-Chain): $${p.tokenPrice.toFixed(4)} USD`);
       log(`    - Reference Price (US Stock): $${p.referencePrice.toFixed(4)} USD`);
-      log(`    - Spread: ${p.spread !== null ? `${(p.spread * 100).toFixed(4)}%` : 'N/A'}`);
-      log(`    - Updated At: ${p.tokenPriceUpdatedAt ? new Date(p.tokenPriceUpdatedAt).toISOString() : 'N/A'}`);
+      log(`    - Deterministic Spread: ${p.spread !== null ? `${(p.spread * 100).toFixed(4)}%` : 'N/A'}`);
+      log(`    - Price Updated At: ${p.tokenPriceUpdatedAt ? new Date(p.tokenPriceUpdatedAt).toISOString() : 'N/A'}`);
     }
+  } else {
+    log(`[ERROR] Failed to fetch live price: ${priceResult.error?.message}`);
   }
 
   // -------------------------------------------------------------------------
-  // STEP 3 — Binance Underlying Market
+  // STEP 3 — Binance Underlying Market Status
   // -------------------------------------------------------------------------
   log('\n------------------------------------------------------------------------');
   log('[STEP 3] Binance Underlying Market Status: US Equity Market Session');
   log('------------------------------------------------------------------------');
 
-  // Query 3A: Configured bNVDA address
-  log(`- [3A] Querying market status for configured address...`);
-  const step3AStart = Date.now();
-  const marketResultA = await rwaClient.getUnderlyingMarketStatus({
-    binanceChainId: CONFIGURED_ASSETS.bNVDA_configured.binanceChainId,
-    tokenContractAddress: CONFIGURED_ASSETS.bNVDA_configured.contractAddress
+  const step3Start = Date.now();
+  const marketResult = await rwaClient.getUnderlyingMarketStatus({
+    binanceChainId: resolvedBStocks.binanceChainId,
+    tokenContractAddress: resolvedBStocks.tokenContractAddress
   });
-  const step3ALatency = Date.now() - step3AStart;
-  log(`  * Latency: ${step3ALatency}ms | Status: ${marketResultA.status}`);
-  if (marketResultA.error) {
-    log(`  * Result: ${marketResultA.error.message} (Fail-closed: unverified)`);
-  }
+  const step3Latency = Date.now() - step3Start;
 
-  // Query 3B: Live registered RWA contract
-  const targetLiveRwa = realRwaAddresses[0];
-  log(`\n- [3B] Querying market status for live registered token (${targetLiveRwa})...`);
-  const step3BStart = Date.now();
-  const marketResultB = await rwaClient.getUnderlyingMarketStatus({
-    binanceChainId: '56',
-    tokenContractAddress: targetLiveRwa
-  });
-  const step3BLatency = Date.now() - step3BStart;
-  log(`  * Latency: ${step3BLatency}ms | Status: ${marketResultB.status}`);
-
-  if (marketResultB.status === 'LIVE' && marketResultB.data) {
-    const m = marketResultB.data;
+  log(`- Request Latency: ${step3Latency}ms | Status: ${marketResult.status}`);
+  if (marketResult.status === 'LIVE' && marketResult.data) {
+    const m = marketResult.data;
     log(`  * Raw Market Status: ${m.status}`);
     log(`  * Open State: ${m.openState ?? 'N/A'}`);
-    log(`  * Raw Reason Code: ${m.reasonCode ?? 'N/A'}`);
+    log(`  * Reason Code: ${m.reasonCode ?? 'N/A'}`);
     log(`  * Next Open Time: ${m.nextOpenTime ? new Date(m.nextOpenTime).toISOString() : 'N/A'}`);
     log(`  * Next Close Time: ${m.nextCloseTime ? new Date(m.nextCloseTime).toISOString() : 'N/A'}`);
 
@@ -278,6 +269,8 @@ export async function runIntegrationSmokeTest(): Promise<void> {
       maxStalenessSeconds: 900
     });
     log(`  * StockPilot Risk Engine State Mapping: ${mappedState}`);
+  } else {
+    log(`[ERROR] Underlying market unavailable: ${marketResult.error?.message}`);
   }
 
   // -------------------------------------------------------------------------
@@ -286,26 +279,20 @@ export async function runIntegrationSmokeTest(): Promise<void> {
   log('\n------------------------------------------------------------------------');
   log('[STEP 4, 5, 6] Wallet Balances & BSC Direct RPC Cross-Reconciliation');
   log('------------------------------------------------------------------------');
-  log(`- Target Wallet: ${walletAddress}`);
+  log(`- Target Wallet: ${maskWalletAddress(walletAddress)}`);
 
   const targets: TokenBalanceTarget[] = [
     {
-      binanceChainId: '56',
-      tokenContractAddress: CONFIGURED_ASSETS.bNVDA_configured.contractAddress,
-      symbol: 'bNVDA (Configured Spec)',
-      decimals: 18
-    },
-    {
-      binanceChainId: '56',
-      tokenContractAddress: targetLiveRwa,
-      symbol: 'NVDAB (Live bStocks)',
-      decimals: 18
+      binanceChainId: resolvedBStocks.binanceChainId,
+      tokenContractAddress: resolvedBStocks.tokenContractAddress,
+      symbol: resolvedBStocks.tokenSymbol,
+      decimals: resolvedBStocks.decimals
     },
     {
       binanceChainId: '56',
       tokenContractAddress: CONFIGURED_ASSETS.USDC.contractAddress,
-      symbol: 'USDC (Binance-Peg)',
-      decimals: 18
+      symbol: CONFIGURED_ASSETS.USDC.symbol,
+      decimals: CONFIGURED_ASSETS.USDC.decimals
     }
   ];
 
@@ -320,8 +307,7 @@ export async function runIntegrationSmokeTest(): Promise<void> {
   log(`- Overall Verification Consensus: ${balanceResult.overallStatus}`);
 
   for (const b of balanceResult.balances) {
-    log(`\n  Asset: ${b.symbol}`);
-    log(`  Address: ${b.tokenContractAddress}`);
+    log(`\n  Asset: ${b.symbol} (${b.tokenContractAddress})`);
     log(`  - [Step 4] Binance Raw Balance: ${b.binanceRawBalance !== null ? b.binanceRawBalance.toString() : 'UNAVAILABLE'}`);
     log(`    [Step 4] Binance Formatted:   ${b.binanceFormattedBalance ?? 'UNAVAILABLE'}`);
     log(`  - [Step 5] Direct BSC RPC Raw:  ${b.rpcRawBalance !== null ? b.rpcRawBalance.toString() : 'UNAVAILABLE'}`);
@@ -329,7 +315,7 @@ export async function runIntegrationSmokeTest(): Promise<void> {
     log(`  - [Step 6] Final Reconciliation: ${b.verificationStatus}`);
 
     if (b.verificationStatus === 'VERIFIED') {
-      log(`    * VERIFIED: Exact raw integer match (${b.verifiedRawBalance?.toString()} == ${b.verifiedRawBalance?.toString()})`);
+      log(`    * VERIFIED: Exact raw integer match (${b.verifiedRawBalance?.toString()} === ${b.verifiedRawBalance?.toString()})`);
       log(`    * Verified Balance: ${b.verifiedFormattedBalance} units`);
     } else if (b.discrepancyReason) {
       log(`    * Discrepancy / Fallback Reason: ${b.discrepancyReason}`);
@@ -372,7 +358,13 @@ export async function runIntegrationSmokeTest(): Promise<void> {
   log('[PASS] No private keys required, no swap/order endpoints called, 0 funds moved.');
 
   log('\n========================================================================');
-  log('Smoke Test Completed Successfully with Zero Mock Enforcement.');
+  if (isZeroAddress) {
+    log(`Final Status: [INFRASTRUCTURE_VERIFIED]`);
+    log(`Plumbing and dual-source consensus verified for BSC Mainnet.`);
+    log(`USER_WALLET_PORTFOLIO_VERIFIED requires configuring a non-zero user wallet.`);
+  } else {
+    log(`Final Status: [USER_WALLET_PORTFOLIO_VERIFIED]`);
+  }
   log('========================================================================');
 }
 

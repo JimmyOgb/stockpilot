@@ -12,10 +12,9 @@
   - [x] Structured parameters: `targetStockWeightBps`, `targetStableWeightBps`, `driftThresholdBps`.
   - [x] Strict validation: Target weights must sum to exactly 100% (10,000 bps).
 
-- [ ] **2. Single Supported Tokenized Stock Asset**
-  - [x] Verified BSC contract address identified: **bNVDA** (`0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495`).
+  - [x] Verified BSC contract address identified via live Binance RWA registry: **NVDAB (bStocks)** (`0x02fca66c1d1afb4e2a7884261eb00f63598a7436`). *Note: Address `0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495` is [STALE / INVALIDATED BY LIVE BINANCE REGISTRY].*
   - [x] Verified token decimals: `18`.
-  - [x] Secondary candidate documented: Ondo USDY (`0x608593d17A2decBbc4399e4185bE4922F97eD32E`, 18 decimals).
+  - [x] Secondary candidate documented: Ondo NVIDIA (`NVDAon` — `0xa9ee28c80f960b889dfbd1902055218cba016f75`).
 
 - [ ] **3. USDC / Stablecoin Counter-Asset**
   - [x] Verified BSC USDC contract mapped: `0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d` (18 decimals).

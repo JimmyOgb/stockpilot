@@ -89,14 +89,14 @@ describe('BinanceRequestSigner', () => {
 
     it('sorts query parameters alphabetically by key and URI-encodes values', () => {
       const canonical = signer.canonicalizeQueryParams({
-        toTokenAddress: '0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495',
+        toTokenAddress: '0x02fca66c1d1afb4e2a7884261eb00f63598a7436',
         chainId: 56,
         amount: '1000000000000000000',
         fromTokenAddress: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d'
       });
 
       expect(canonical).toBe(
-        'amount=1000000000000000000&chainId=56&fromTokenAddress=0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d&toTokenAddress=0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495'
+        'amount=1000000000000000000&chainId=56&fromTokenAddress=0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d&toTokenAddress=0x02fca66c1d1afb4e2a7884261eb00f63598a7436'
       );
     });
 
@@ -176,7 +176,7 @@ describe('BinanceRequestSigner', () => {
         apiSecret: testApiSecret
       });
 
-      const body = [{ chainId: '56', contractAddress: '0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495' }];
+      const body = [{ chainId: '56', contractAddress: '0x02fca66c1d1afb4e2a7884261eb00f63598a7436' }];
       const options = {
         method: 'POST',
         requestPath: '/build/api/v1/dex/market/price',

@@ -2,9 +2,7 @@
 
 > **BNB Hack: Tokenized Stocks Edition** (Sep 16 – Oct 11, 2026)  
 > **System**: StockPilot Autonomous BSC Portfolio Rebalancer  
-> **Network**: BNB Smart Chain (BSC Mainnet — Chain ID: 56)  
-> **Core Asset**: `bNVDA` (Backed NVIDIA — `0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495`) & `USDC` (`0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d`)  
-> **Transaction Mode**: Spot Only (Zero Perpetuals, Zero Leverage)  
+> **Core Asset**: `NVDA` Tokenized Equity — Backed NVIDIA (`NVDAB` — `0x02fca66c1d1afb4e2a7884261eb00f63598a7436`) & `USDC` (`0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d`). *Note: Initial spec address `0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495` is [STALE / INVALIDATED BY LIVE BINANCE REGISTRY].*  
 > **Data Integrity**: Strict Zero-Mock Policy  
 
 ---

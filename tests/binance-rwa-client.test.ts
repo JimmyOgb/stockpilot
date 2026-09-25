@@ -70,7 +70,7 @@ describe('BinanceRwaClient', () => {
               {
                 platformId: 3,
                 binanceChainId: '56',
-                tokenContractAddress: '0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495',
+                tokenContractAddress: '0x02fca66c1d1afb4e2a7884261eb00f63598a7436',
                 tokenSymbol: 'bNVDA',
                 assetType: 'stock'
               }
@@ -102,7 +102,7 @@ describe('BinanceRwaClient', () => {
 
       const asset = token.assets[0];
       expect(asset.tokenSymbol).toBe('bNVDA');
-      expect(asset.tokenContractAddress).toBe('0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495');
+      expect(asset.tokenContractAddress).toBe('0x02fca66c1d1afb4e2a7884261eb00f63598a7436');
       expect(asset.binanceChainId).toBe('56');
       expect(asset.platformId).toBe(3);
 
@@ -197,7 +197,7 @@ describe('BinanceRwaClient', () => {
         data: [
           {
             binanceChainId: '56',
-            tokenContractAddress: '0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495',
+            tokenContractAddress: '0x02fca66c1d1afb4e2a7884261eb00f63598a7436',
             platformId: 3,
             tokenPrice: '124.50',
             referencePrice: '123.80',
@@ -216,7 +216,7 @@ describe('BinanceRwaClient', () => {
       });
 
       const result = await client.getRwaPriceAndSpread({
-        tokenContractAddresses: '0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495',
+        tokenContractAddresses: '0x02fca66c1d1afb4e2a7884261eb00f63598a7436',
         binanceChainId: 56
       });
 
@@ -225,7 +225,7 @@ describe('BinanceRwaClient', () => {
       const item = result.data![0];
       expect(item.tokenPrice).toBe(124.50);
       expect(item.referencePrice).toBe(123.80);
-      expect(item.tokenContractAddress).toBe('0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495');
+      expect(item.tokenContractAddress).toBe('0x02fca66c1d1afb4e2a7884261eb00f63598a7436');
       expect(item.binanceChainId).toBe('56');
 
       // Expected spread: (124.50 - 123.80) / 123.80 = 0.00565428... (~0.565%)
@@ -234,7 +234,7 @@ describe('BinanceRwaClient', () => {
 
       // Verify exact query parameter names in URL
       expect(capturedUrl).toContain('binanceChainId=56');
-      expect(capturedUrl).toContain('tokenContractAddresses=0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495');
+      expect(capturedUrl).toContain('tokenContractAddresses=0x02fca66c1d1afb4e2a7884261eb00f63598a7436');
       expect(capturedUrl).not.toContain('chainId=');
       expect(capturedUrl).not.toContain('contractAddress=');
       expect(capturedUrl).not.toContain('/build/build');
@@ -246,7 +246,7 @@ describe('BinanceRwaClient', () => {
         data: [
           {
             binanceChainId: '56',
-            tokenContractAddress: '0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495',
+            tokenContractAddress: '0x02fca66c1d1afb4e2a7884261eb00f63598a7436',
             tokenPrice: '124.50',
             referencePrice: null,
             tokenPriceUpdatedAt: 1727250000000
@@ -260,7 +260,7 @@ describe('BinanceRwaClient', () => {
       });
 
       const result = await client.getRwaPriceAndSpread({
-        tokenContractAddresses: '0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495'
+        tokenContractAddresses: '0x02fca66c1d1afb4e2a7884261eb00f63598a7436'
       });
 
       expect(result.status).toBe('LIVE');
@@ -275,7 +275,7 @@ describe('BinanceRwaClient', () => {
         data: [
           {
             binanceChainId: '56',
-            tokenContractAddress: '0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495',
+            tokenContractAddress: '0x02fca66c1d1afb4e2a7884261eb00f63598a7436',
             tokenPrice: '124.50',
             referencePrice: '0.00',
             tokenPriceUpdatedAt: 1727250000000
@@ -289,7 +289,7 @@ describe('BinanceRwaClient', () => {
       });
 
       const result = await client.getRwaPriceAndSpread({
-        tokenContractAddresses: '0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495'
+        tokenContractAddresses: '0x02fca66c1d1afb4e2a7884261eb00f63598a7436'
       });
 
       expect(result.status).toBe('LIVE');
@@ -302,7 +302,7 @@ describe('BinanceRwaClient', () => {
         data: [
           {
             binanceChainId: '56',
-            tokenContractAddress: '0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495',
+            tokenContractAddress: '0x02fca66c1d1afb4e2a7884261eb00f63598a7436',
             tokenPrice: '-10.50',
             referencePrice: '123.80'
           }
@@ -315,7 +315,7 @@ describe('BinanceRwaClient', () => {
       });
 
       const result = await client.getRwaPriceAndSpread({
-        tokenContractAddresses: '0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495'
+        tokenContractAddresses: '0x02fca66c1d1afb4e2a7884261eb00f63598a7436'
       });
 
       expect(result.status).toBe('LIVE');
@@ -328,7 +328,7 @@ describe('BinanceRwaClient', () => {
         data: [
           {
             binanceChainId: '56',
-            tokenContractAddress: '0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495',
+            tokenContractAddress: '0x02fca66c1d1afb4e2a7884261eb00f63598a7436',
             tokenPrice: null,
             referencePrice: null
           }
@@ -341,7 +341,7 @@ describe('BinanceRwaClient', () => {
       });
 
       const result = await client.getRwaPriceAndSpread({
-        tokenContractAddresses: '0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495'
+        tokenContractAddresses: '0x02fca66c1d1afb4e2a7884261eb00f63598a7436'
       });
 
       expect(result.status).toBe('INVALID_RESPONSE');
@@ -361,7 +361,7 @@ describe('BinanceRwaClient', () => {
       });
 
       const result = await client.getRwaPriceAndSpread({
-        tokenContractAddresses: '0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495'
+        tokenContractAddresses: '0x02fca66c1d1afb4e2a7884261eb00f63598a7436'
       });
 
       expect(result.status).toBe('UNAVAILABLE');
@@ -401,7 +401,7 @@ describe('BinanceRwaClient', () => {
       });
 
       const result = await client.getUnderlyingMarketStatus({
-        tokenContractAddress: '0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495',
+        tokenContractAddress: '0x02fca66c1d1afb4e2a7884261eb00f63598a7436',
         binanceChainId: 56
       });
 
@@ -417,7 +417,7 @@ describe('BinanceRwaClient', () => {
       expect(capturedUrl).toContain('/api/v1/dex/market/rwa/underlying-market?');
       expect(capturedUrl).not.toContain('/underlying-market-data');
       expect(capturedUrl).toContain('binanceChainId=56');
-      expect(capturedUrl).toContain('tokenContractAddress=0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495');
+      expect(capturedUrl).toContain('tokenContractAddress=0x02fca66c1d1afb4e2a7884261eb00f63598a7436');
     });
 
     it('correctly maps CLOSED status', async () => {
@@ -440,7 +440,7 @@ describe('BinanceRwaClient', () => {
       });
 
       const result = await client.getUnderlyingMarketStatus({
-        tokenContractAddress: '0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495'
+        tokenContractAddress: '0x02fca66c1d1afb4e2a7884261eb00f63598a7436'
       });
 
       expect(result.status).toBe('LIVE');
@@ -468,7 +468,7 @@ describe('BinanceRwaClient', () => {
       });
 
       const result = await client.getUnderlyingMarketStatus({
-        tokenContractAddress: '0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495'
+        tokenContractAddress: '0x02fca66c1d1afb4e2a7884261eb00f63598a7436'
       });
 
       expect(result.status).toBe('LIVE');
@@ -496,7 +496,7 @@ describe('BinanceRwaClient', () => {
       });
 
       const result = await client.getUnderlyingMarketStatus({
-        tokenContractAddress: '0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495'
+        tokenContractAddress: '0x02fca66c1d1afb4e2a7884261eb00f63598a7436'
       });
 
       expect(result.status).toBe('LIVE');
@@ -515,7 +515,7 @@ describe('BinanceRwaClient', () => {
       });
 
       const result = await client.getUnderlyingMarketStatus({
-        tokenContractAddress: '0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495'
+        tokenContractAddress: '0x02fca66c1d1afb4e2a7884261eb00f63598a7436'
       });
 
       expect(result.status).toBe('LIVE');
@@ -538,7 +538,7 @@ describe('BinanceRwaClient', () => {
       });
 
       const result = await client.getUnderlyingMarketStatus({
-        tokenContractAddress: '0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495'
+        tokenContractAddress: '0x02fca66c1d1afb4e2a7884261eb00f63598a7436'
       });
 
       expect(result.status).toBe('LIVE');

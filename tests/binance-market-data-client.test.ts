@@ -56,7 +56,7 @@ describe('BinanceMarketDataClient', () => {
         data: [
           {
             chainId: '56',
-            contractAddress: '0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495',
+            contractAddress: '0x02fca66c1d1afb4e2a7884261eb00f63598a7436',
             symbol: 'bNVDA',
             name: 'Backed NVIDIA',
             decimals: 18,
@@ -77,7 +77,7 @@ describe('BinanceMarketDataClient', () => {
       expect(result.data).toHaveLength(1);
       const token = result.data![0];
       expect(token.symbol).toBe('bNVDA');
-      expect(token.contractAddress).toBe('0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495');
+      expect(token.contractAddress).toBe('0x02fca66c1d1afb4e2a7884261eb00f63598a7436');
       expect(token.decimals).toBe(18);
     });
 
@@ -131,7 +131,7 @@ describe('BinanceMarketDataClient', () => {
         data: [
           {
             chainId: '56',
-            contractAddress: '0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495',
+            contractAddress: '0x02fca66c1d1afb4e2a7884261eb00f63598a7436',
             price: '124.50',
             updatedAt: 1727250000000
           }
@@ -145,14 +145,14 @@ describe('BinanceMarketDataClient', () => {
       });
 
       const result = await client.getPrices([
-        { chainId: 56, contractAddress: '0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495' }
+        { chainId: 56, contractAddress: '0x02fca66c1d1afb4e2a7884261eb00f63598a7436' }
       ]);
 
       expect(result.status).toBe('LIVE');
       expect(result.data).toHaveLength(1);
       const price = result.data![0];
       expect(price.priceUsd).toBe(124.5);
-      expect(price.contractAddress).toBe('0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495');
+      expect(price.contractAddress).toBe('0x02fca66c1d1afb4e2a7884261eb00f63598a7436');
       expect(price.updatedAt).toBe(1727250000000);
     });
 
@@ -162,7 +162,7 @@ describe('BinanceMarketDataClient', () => {
         data: [
           {
             chainId: '56',
-            contractAddress: '0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495',
+            contractAddress: '0x02fca66c1d1afb4e2a7884261eb00f63598a7436',
             price: 'N/A' // Not a valid float
           }
         ]
@@ -174,7 +174,7 @@ describe('BinanceMarketDataClient', () => {
       });
 
       const result = await client.getPrices([
-        { chainId: 56, contractAddress: '0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495' }
+        { chainId: 56, contractAddress: '0x02fca66c1d1afb4e2a7884261eb00f63598a7436' }
       ]);
 
       expect(result.status).toBe('INVALID_RESPONSE');
@@ -188,7 +188,7 @@ describe('BinanceMarketDataClient', () => {
         data: [
           {
             chainId: '56',
-            contractAddress: '0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495',
+            contractAddress: '0x02fca66c1d1afb4e2a7884261eb00f63598a7436',
             price: '-10.50'
           }
         ]
@@ -200,7 +200,7 @@ describe('BinanceMarketDataClient', () => {
       });
 
       const result = await client.getPrices([
-        { chainId: 56, contractAddress: '0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495' }
+        { chainId: 56, contractAddress: '0x02fca66c1d1afb4e2a7884261eb00f63598a7436' }
       ]);
 
       expect(result.status).toBe('INVALID_RESPONSE');
@@ -224,7 +224,7 @@ describe('BinanceMarketDataClient', () => {
       });
 
       const result = await client.getPrices([
-        { chainId: 56, contractAddress: '0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495' }
+        { chainId: 56, contractAddress: '0x02fca66c1d1afb4e2a7884261eb00f63598a7436' }
       ]);
 
       expect(result.status).toBe('INVALID_RESPONSE');

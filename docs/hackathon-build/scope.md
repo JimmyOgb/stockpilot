@@ -16,7 +16,7 @@
 
 ## 2. Mandatory Track Requirements & Alignment
 
-1. **Asset Core (Mandatory)**: Centered on **bNVDA / bStocks** on BSC Mainnet (`0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495`, 18 decimals), paired with `USDC` (`0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d`, 18 decimals).
+1. **Asset Core (Mandatory)**: Centered on **NVDA Tokenized Equity** on BSC Mainnet: Backed NVIDIA (`NVDAB` — `0x02fca66c1d1afb4e2a7884261eb00f63598a7436`, 18 decimals) and Ondo NVIDIA (`NVDAon` — `0xa9ee28c80f960b889dfbd1902055218cba016f75`), paired with `USDC` (`0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d`, 18 decimals). *Note: Initial spec address `0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495` is [STALE / INVALIDATED BY LIVE BINANCE REGISTRY].*
 2. **Network**: Fully operational on **BSC Mainnet** (Chain ID: 56).
 3. **Transaction Mode**: **Spot transactions only** (RFQ or Dex Aggregator swap). Absolutely zero perpetuals, zero leverage, and zero margin borrowing.
 4. **Authoritative RWA Data API**:
