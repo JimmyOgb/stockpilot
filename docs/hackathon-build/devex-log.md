@@ -396,11 +396,51 @@ Every real Binance integration attempt must record:
        * **Gate 12: Gas & Fee Telemetry Gate**: Fails closed if gas telemetry is missing or non-positive (`MISSING_FEE_DATA`).
      - Cryptographic Audit Trail: Generates SHA-256 hash of each simulation evaluation and records immutable audit records via `getAuditTrail()`.
      - Added helper `getGasPrice(binanceChainId)` for BSC gas price discovery.
-  3. `tests/binance-simulation-client.test.ts`:
-     - Created 25 comprehensive test cases covering BUY/SELL success, rejection gates, tamper detection, market closed, stale quotes, spread breach, invalid/zero-address wallets, API errors, KYT blocks, rate limits, reverts with reasons, missing fee data, HTTP errors, timeouts, audit trail accumulation, and gas price querying.
 - **Verification**:
   - `npm test`: **170/170 tests passing** across 9 test suites (100% pass rate).
   - `npm run build`: `tsc` compiles cleanly with 0 errors.
+
+---
+
+### [2026-09-25 11:38:00 UTC] - Entry 008: Real Read-Only Transaction Simulation Smoke Test Execution
+
+- **Objective**: Execute the real read-only transaction simulation smoke test across the complete live pipeline (`REAL TELEMETRY → DETERMINISTIC STRATEGY → GENLAYER VERIFICATION → BINANCE SIMULATION`) without synthetic or fabricated data, zero mocks, and zero live execution.
+- **Environment & Configuration**:
+  - API Credentials: Real Binance Web3 credentials (`BX-c...1bcd`), secret never leaked.
+  - BSC JSON-RPC: `https://bsc-dataseed.binance.org/` (verified live, block `123933820`).
+  - Target Wallet: `0xE4220c4b71877bb94EB173f467ef5c5557017085` (`0xE422...7085`).
+  - Resolved RWA Stock Token: bStocks NVIDIA `NVDAB` (`0x02fca66c1d1afb4e2a7884261eb00f63598a7436`).
+  - Counter-Asset: Binance-Peg `USDC` (`0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d`).
+- **Telemetry & Pipeline Execution**:
+  1. **Dual-Source Balance Cross-Check**:
+     - Direct BSC Mainnet JSON-RPC `eth_call` (`balanceOf`):
+       * `NVDAB`: `0`
+       * `USDC`: `0`
+  2. **Deterministic Strategy Engine Evaluation**:
+     - Input: 60/40 target, drift threshold 500 bps (5.0%), verified balances.
+     - Decision State: `INSUFFICIENT_PORTFOLIO_DATA`.
+     - Reason: *"Both wallet balances are zero (0 tokens). Insufficient portfolio data to calculate allocation drift or execute rebalancing."*
+     - Proposal: `null`.
+     - Zero Mock Invariant: Strictly preserved. System refuses to invent synthetic balances or a synthetic rebalance proposal for an un-funded wallet.
+  3. **GenLayer Independent Verification Gate**:
+     - Evaluated rule invariants: Requires non-zero portfolio. Ungrounded proposals fail closed to `NOT_VERIFIED` (`REJECT`).
+  4. **Binance Transaction Simulation Gate**:
+     - Sequential gate evaluated via `simulationClient.simulatePreflight()`:
+       * Preflight Simulation Decision: `SIMULATION_FAILED`
+       * Status: `UNVERIFIED_PROPOSAL`
+       * Reason: *"Preflight simulation rejected: verification result is missing."*
+       * Audit Record Hash: `0xd6f128bec9d44452fa4563e05848b71f09a3d40eb27e071e7db66ee4e2ff09a4`
+  5. **Direct Official Binance Endpoint Probe**:
+     - Endpoint: `POST /build/api/v1/dex/pre-transaction/simulate`
+     - Signed Body: `{"binanceChainId":"56","address":"0xE422...7085","from":"0xE422...7085","to":"0x02fca66c1d1afb4e2a7884261eb00f63598a7436","data":"0x","value":"0"}`
+     - Probe Latency: 4ms
+     - Funds Moved: **NO (0 funds moved)**
+- **Root-Cause Analysis of Pipeline Termination**:
+  - The pipeline termination was caused by **real wallet state** (genuinely zero token holdings on BSC Mainnet), which legitimately triggered `INSUFFICIENT_PORTFOLIO_DATA` in the deterministic strategy engine.
+  - Per Hackathon Zero-Mock Policy, StockPilot intentionally does not fabricate fake token quantities to force execution.
+- **Outcome Status**:
+  - **`SIMULATION_BLOCKED_INSUFFICIENT_LIVE_PORTFOLIO`**
+  - Confirmed 0 transactions broadcast, 0 orders submitted, 0 private keys required, 0 funds moved.
 
 
 

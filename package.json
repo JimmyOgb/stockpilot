@@ -12,7 +12,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:smoke": "tsx scripts/smoke-test-readonly-integration.ts",
-    "test:smoke:market": "tsx scripts/smoke-test-market-data.ts"
+    "test:smoke:market": "tsx scripts/smoke-test-market-data.ts",
+    "test:smoke:simulation": "tsx scripts/smoke-test-simulation.ts"
   },
   "dependencies": {
     "dotenv": "^16.4.7",
