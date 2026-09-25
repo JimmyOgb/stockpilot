@@ -189,6 +189,31 @@ Every real Binance integration attempt must record:
   - Zero live network dependencies during normal test runs.
   - No live financial calls made; zero credentials leaked.
 
+### Entry #010: RWA Client Alignment with Current Official Binance Web3 Schema
+- **Date / Time**: 2026-09-25 09:13:00 UTC
+- **Reference Doc**: `https://web3.binance.com/en/dev-docs/catalog/web3-wallet/api/rest-api/rwa-data`
+- **Module**: `src/binance/rwa-client.ts` & `tests/binance-rwa-client.test.ts`
+- **Corrections Applied**:
+  1. **RWA Price Endpoint**:
+     - Path: `GET /build/api/v1/dex/market/rwa/price`
+     - Query Parameters: Corrected from `chainId`/`contractAddress` to official `binanceChainId=56` and `tokenContractAddresses=<comma-separated>`.
+     - Response Schema: Uses documented fields: `binanceChainId`, `tokenContractAddress`, `platformId`, `tokenPrice`, `referencePrice`, `tokenPriceUpdatedAt`.
+     - Spread Calculation: `spread = (tokenPrice - referencePrice) / referencePrice` (strictly null if either is <= 0 or NaN).
+  2. **RWA Search Endpoint**:
+     - Path: `GET /build/api/v1/dex/market/rwa/search`
+     - Query Parameters: Sends `keyword` and optional `platformId` (does not send `chainId`).
+     - Response Schema: Uses documented nested structure: `data[] -> ticker, companyName, assets[] -> platformId, binanceChainId, tokenContractAddress, tokenSymbol, assetType`.
+  3. **Underlying Market Endpoint**:
+     - Path: Corrected from `/underlying-market-data` to official `/underlying-market`.
+     - Query Parameters: `binanceChainId` and `tokenContractAddress`.
+     - Response Schema: Uses documented `data.statusInfo` (`openState`, `marketStatus`, `reasonCode`, `reasonMsg`, `nextOpenTime`, `nextCloseTime`) and `data.marketData.referencePrice`.
+- **Result**:
+  - 26/26 unit tests passing in `tests/binance-rwa-client.test.ts`.
+  - 72/72 tests passing project-wide across 4 test suites.
+  - TypeScript compilation completely clean (0 errors).
+  - Test assertions explicitly verify exact URL construction and pre-hash signed parameters.
+
+
 
 
 

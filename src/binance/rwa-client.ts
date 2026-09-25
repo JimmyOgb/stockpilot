@@ -4,11 +4,11 @@
  * Implements authenticated read-only interactions with the Binance Web3 RWA API:
  * 1. GET /api/v1/dex/market/rwa/search
  * 2. GET /api/v1/dex/market/rwa/price
- * 3. GET /api/v1/dex/market/rwa/underlying-market-data
+ * 3. GET /api/v1/dex/market/rwa/underlying-market
  *
  * Enforces Zero-Mock compliance: All responses are defensively validated at runtime.
  * Malformed or missing data fails closed. Spreads are computed strictly when both
- * on-chain and reference prices are valid positive numbers; otherwise returns null.
+ * tokenPrice and referencePrice are valid positive numbers; otherwise returns null.
  */
 
 import { BinanceRequestSigner } from './request-signer.js';
@@ -41,43 +41,57 @@ export interface BinanceRwaClientConfig {
   fetchFn?: typeof fetch;
 }
 
+// 1. RWA Search Query & Response Types
 export interface RwaTokenSearchQuery {
   keyword: string;
-  chainId?: string | number;
+  platformId?: number;
+}
+
+export interface VerifiedRwaAsset {
+  platformId: number;
+  binanceChainId: string;
+  tokenContractAddress: string;
+  tokenSymbol: string;
+  assetType?: string | number;
 }
 
 export interface VerifiedRwaTokenMetadata {
-  chainId: string;
-  contractAddress: string;
-  symbol: string;
-  name: string;
-  decimals: number;
-  underlyingTicker?: string;
-  platformId?: number;
-  isRiskToken?: boolean;
+  ticker: string;
+  companyName: string;
+  assets: VerifiedRwaAsset[];
 }
 
+// 2. RWA Price & Spread Query & Response Types
 export interface RwaPriceQuery {
-  contractAddress: string;
-  chainId?: string | number;
+  tokenContractAddresses: string | string[];
+  binanceChainId?: string | number;
 }
 
 export interface RwaPriceAndSpread {
-  chainId: string;
-  contractAddress: string;
-  onChainPrice: number;
+  binanceChainId: string;
+  tokenContractAddress: string;
+  platformId?: number;
+  tokenPrice: number;
   referencePrice: number;
-  spread: number | null; // Real spread: (onChainPrice - referencePrice) / referencePrice, or null
-  updatedAt: number;
+  spread: number | null; // Real spread: (tokenPrice - referencePrice) / referencePrice, or null
+  tokenPriceUpdatedAt: number;
+}
+
+// 3. Underlying Market Query & Response Types
+export interface UnderlyingMarketQuery {
+  tokenContractAddress: string;
+  binanceChainId?: string | number;
 }
 
 export interface UnderlyingMarketStatusResult {
   status: RwaMarketStatus;
-  rawStatus?: string;
-  rawReasonCode?: string;
-  rawReasonMsg?: string;
+  rawMarketStatus?: string;
+  rawReasonCode?: string | null;
+  rawReasonMsg?: string | null;
+  openState?: boolean;
   nextOpenTime?: number;
   nextCloseTime?: number;
+  referencePrice?: number | null;
   updatedAt: number;
 }
 
@@ -113,6 +127,7 @@ export class BinanceRwaClient {
   /**
    * Searches for supported RWA / tokenized-stock assets on Binance Web3 API.
    * Endpoint: GET /build/api/v1/dex/market/rwa/search
+   * Official query params: keyword, optional platformId
    */
   public async searchRwaToken(query: RwaTokenSearchQuery): Promise<RwaDataResult<VerifiedRwaTokenMetadata[]>> {
     const now = Date.now();
@@ -129,8 +144,8 @@ export class BinanceRwaClient {
     const queryParams: Record<string, string | number> = {
       keyword: query.keyword.trim()
     };
-    if (query.chainId !== undefined) {
-      queryParams.chainId = String(query.chainId);
+    if (query.platformId !== undefined) {
+      queryParams.platformId = query.platformId;
     }
 
     const endpointPath = '/api/v1/dex/market/rwa/search';
@@ -180,29 +195,43 @@ export class BinanceRwaClient {
   }
 
   /**
-   * Retrieves on-chain token price and underlying reference price, then calculates real spread.
-   * spread = (onChainPrice - referencePrice) / referencePrice
+   * Retrieves tokenPrice and referencePrice, then calculates real spread.
+   * spread = (tokenPrice - referencePrice) / referencePrice
    * If either price is missing, non-positive, or invalid, spread is returned as null (for '—' rendering).
    * Endpoint: GET /build/api/v1/dex/market/rwa/price
+   * Official query params: binanceChainId, tokenContractAddresses
    */
-  public async getRwaPriceAndSpread(query: RwaPriceQuery): Promise<RwaDataResult<RwaPriceAndSpread>> {
+  public async getRwaPriceAndSpread(query: RwaPriceQuery): Promise<RwaDataResult<RwaPriceAndSpread[]>> {
     const now = Date.now();
 
-    if (!query || typeof query.contractAddress !== 'string' || query.contractAddress.trim().length === 0) {
+    if (!query) {
       return {
         status: 'INVALID_RESPONSE',
         data: null,
-        error: { message: 'Invalid price query: contractAddress is required.' },
+        error: { message: 'Invalid price query: query is required.' },
+        fetchedAt: now
+      };
+    }
+
+    const addressList = Array.isArray(query.tokenContractAddresses)
+      ? query.tokenContractAddresses.map(a => a.trim()).filter(a => a.length > 0)
+      : typeof query.tokenContractAddresses === 'string' && query.tokenContractAddresses.trim().length > 0
+        ? [query.tokenContractAddresses.trim()]
+        : [];
+
+    if (addressList.length === 0) {
+      return {
+        status: 'INVALID_RESPONSE',
+        data: null,
+        error: { message: 'Invalid price query: tokenContractAddresses must contain at least one contract address.' },
         fetchedAt: now
       };
     }
 
     const queryParams: Record<string, string | number> = {
-      contractAddress: query.contractAddress.trim()
+      binanceChainId: String(query.binanceChainId ?? '56'),
+      tokenContractAddresses: addressList.join(',')
     };
-    if (query.chainId !== undefined) {
-      queryParams.chainId = String(query.chainId);
-    }
 
     const endpointPath = '/api/v1/dex/market/rwa/price';
     const requestPath = `/build${endpointPath}`;
@@ -232,7 +261,7 @@ export class BinanceRwaClient {
       };
     }
 
-    const validation = this.validatePriceAndSpreadResponse(fetchResult.rawJson, query.contractAddress);
+    const validation = this.validatePriceAndSpreadResponse(fetchResult.rawJson, addressList);
     if (!validation.isValid) {
       return {
         status: validation.status ?? 'INVALID_RESPONSE',
@@ -244,7 +273,7 @@ export class BinanceRwaClient {
 
     return {
       status: 'LIVE',
-      data: validation.priceData!,
+      data: validation.priceData,
       fetchedAt: Date.now()
     };
   }
@@ -252,28 +281,27 @@ export class BinanceRwaClient {
   /**
    * Retrieves market status and session timing for the underlying traditional asset.
    * Distinguishes: OPEN, CLOSED, PAUSED, HALTED, UNAVAILABLE, UNKNOWN.
-   * Endpoint: GET /build/api/v1/dex/market/rwa/underlying-market-data
+   * Endpoint: GET /build/api/v1/dex/market/rwa/underlying-market
+   * Official query params: binanceChainId, tokenContractAddress
    */
-  public async getUnderlyingMarketStatus(query: RwaPriceQuery): Promise<RwaDataResult<UnderlyingMarketStatusResult>> {
+  public async getUnderlyingMarketStatus(query: UnderlyingMarketQuery): Promise<RwaDataResult<UnderlyingMarketStatusResult>> {
     const now = Date.now();
 
-    if (!query || typeof query.contractAddress !== 'string' || query.contractAddress.trim().length === 0) {
+    if (!query || typeof query.tokenContractAddress !== 'string' || query.tokenContractAddress.trim().length === 0) {
       return {
         status: 'INVALID_RESPONSE',
         data: null,
-        error: { message: 'Invalid query: contractAddress is required.' },
+        error: { message: 'Invalid query: tokenContractAddress is required.' },
         fetchedAt: now
       };
     }
 
     const queryParams: Record<string, string | number> = {
-      contractAddress: query.contractAddress.trim()
+      binanceChainId: String(query.binanceChainId ?? '56'),
+      tokenContractAddress: query.tokenContractAddress.trim()
     };
-    if (query.chainId !== undefined) {
-      queryParams.chainId = String(query.chainId);
-    }
 
-    const endpointPath = '/api/v1/dex/market/rwa/underlying-market-data';
+    const endpointPath = '/api/v1/dex/market/rwa/underlying-market';
     const requestPath = `/build${endpointPath}`;
     const queryString = this.signer.canonicalizeQueryParams(queryParams);
     const fullUrl = `${this.baseUrl}${endpointPath}?${queryString}`;
@@ -438,6 +466,8 @@ export class BinanceRwaClient {
 
   /**
    * Defensive validation for RWA Token Search response.
+   * Documented schema:
+   * data[] -> ticker, companyName, assets[] -> platformId, binanceChainId, tokenContractAddress, tokenSymbol, assetType
    */
   private validateRwaSearchResponse(
     json: unknown,
@@ -478,28 +508,43 @@ export class BinanceRwaClient {
 
       const t = item as Record<string, unknown>;
 
-      if (typeof t.contractAddress !== 'string' || t.contractAddress.trim().length === 0) {
-        return { isValid: false, tokens: [], status: 'INVALID_RESPONSE', reason: `Item at index ${i} is missing contractAddress.` };
+      if (typeof t.ticker !== 'string' || t.ticker.trim().length === 0) {
+        return { isValid: false, tokens: [], status: 'INVALID_RESPONSE', reason: `Item at index ${i} is missing ticker.` };
       }
 
-      if (typeof t.symbol !== 'string' || t.symbol.trim().length === 0) {
-        return { isValid: false, tokens: [], status: 'INVALID_RESPONSE', reason: `Item at index ${i} is missing symbol.` };
+      if (!Array.isArray(t.assets)) {
+        return { isValid: false, tokens: [], status: 'INVALID_RESPONSE', reason: `Item at index ${i} is missing assets array.` };
       }
 
-      const decimals = typeof t.decimals === 'number' ? t.decimals : parseInt(String(t.decimals), 10);
-      if (isNaN(decimals) || decimals < 0 || decimals > 36) {
-        return { isValid: false, tokens: [], status: 'INVALID_RESPONSE', reason: `Item at index ${i} has invalid decimals.` };
+      const validatedAssets: VerifiedRwaAsset[] = [];
+      for (let j = 0; j < t.assets.length; j++) {
+        const a = t.assets[j];
+        if (typeof a !== 'object' || a === null) {
+          return { isValid: false, tokens: [], status: 'INVALID_RESPONSE', reason: `Asset at index ${i}.${j} is not an object.` };
+        }
+        const assetObj = a as Record<string, unknown>;
+
+        if (typeof assetObj.tokenContractAddress !== 'string' || assetObj.tokenContractAddress.trim().length === 0) {
+          return { isValid: false, tokens: [], status: 'INVALID_RESPONSE', reason: `Asset at index ${i}.${j} missing tokenContractAddress.` };
+        }
+
+        if (typeof assetObj.tokenSymbol !== 'string' || assetObj.tokenSymbol.trim().length === 0) {
+          return { isValid: false, tokens: [], status: 'INVALID_RESPONSE', reason: `Asset at index ${i}.${j} missing tokenSymbol.` };
+        }
+
+        validatedAssets.push({
+          platformId: typeof assetObj.platformId === 'number' ? assetObj.platformId : parseInt(String(assetObj.platformId), 10) || 0,
+          binanceChainId: String(assetObj.binanceChainId ?? ''),
+          tokenContractAddress: assetObj.tokenContractAddress.trim(),
+          tokenSymbol: assetObj.tokenSymbol.trim(),
+          assetType: typeof assetObj.assetType === 'string' || typeof assetObj.assetType === 'number' ? assetObj.assetType : undefined
+        });
       }
 
       tokens.push({
-        chainId: String(t.chainId ?? ''),
-        contractAddress: t.contractAddress.trim(),
-        symbol: t.symbol.trim(),
-        name: typeof t.name === 'string' ? t.name : t.symbol.trim(),
-        decimals,
-        underlyingTicker: typeof t.underlyingTicker === 'string' ? t.underlyingTicker : undefined,
-        platformId: typeof t.platformId === 'number' ? t.platformId : undefined,
-        isRiskToken: Boolean(t.isRiskToken)
+        ticker: t.ticker.trim(),
+        companyName: typeof t.companyName === 'string' ? t.companyName.trim() : t.ticker.trim(),
+        assets: validatedAssets
       });
     }
 
@@ -508,88 +553,106 @@ export class BinanceRwaClient {
 
   /**
    * Defensive validation for RWA Price & Spread response.
+   * Documented schema:
+   * data[] -> binanceChainId, tokenContractAddress, platformId, tokenPrice, referencePrice, tokenPriceUpdatedAt
    */
   private validatePriceAndSpreadResponse(
     json: unknown,
-    expectedContract: string
+    requestedAddresses: string[]
   ): {
     isValid: boolean;
-    priceData?: RwaPriceAndSpread;
+    priceData: RwaPriceAndSpread[];
     status?: RwaClientStatus;
     reason?: string;
   } {
     if (typeof json !== 'object' || json === null) {
-      return { isValid: false, status: 'INVALID_RESPONSE', reason: 'Price response is not a JSON object.' };
+      return { isValid: false, priceData: [], status: 'INVALID_RESPONSE', reason: 'Price response is not a JSON object.' };
     }
 
     const obj = json as Record<string, unknown>;
-    let item: Record<string, unknown> | null = null;
+    const rawData = obj.data;
 
-    if (Array.isArray(obj.data)) {
-      if (obj.data.length === 0) {
-        return { isValid: false, status: 'UNAVAILABLE', reason: `No price data returned for ${expectedContract}.` };
+    if (!Array.isArray(rawData)) {
+      return { isValid: false, priceData: [], status: 'INVALID_RESPONSE', reason: 'Field "data" is missing or not an array.' };
+    }
+
+    if (rawData.length === 0) {
+      return { isValid: false, priceData: [], status: 'UNAVAILABLE', reason: `No price data returned for requested tokens.` };
+    }
+
+    const priceList: RwaPriceAndSpread[] = [];
+
+    for (let i = 0; i < rawData.length; i++) {
+      const item = rawData[i];
+      if (typeof item !== 'object' || item === null) {
+        return { isValid: false, priceData: [], status: 'INVALID_RESPONSE', reason: `Price item at index ${i} is not an object.` };
       }
-      item = obj.data[0] as Record<string, unknown>;
-    } else if (typeof obj.data === 'object' && obj.data !== null) {
-      item = obj.data as Record<string, unknown>;
-    }
 
-    if (!item) {
-      return { isValid: false, status: 'INVALID_RESPONSE', reason: 'Field "data" is missing or empty.' };
-    }
+      const p = item as Record<string, unknown>;
 
-    // Extract onChainPrice
-    const rawOnChain = item.onChainPrice ?? item.onchainPrice ?? item.tokenPrice;
-    // Extract referencePrice
-    const rawReference = item.referencePrice ?? item.underlyingPrice ?? item.stockPrice;
-
-    // Validate onChainPrice
-    const onChainNum = rawOnChain !== undefined && rawOnChain !== null ? parseFloat(String(rawOnChain)) : NaN;
-    const hasValidOnChain = Number.isFinite(onChainNum) && onChainNum > 0;
-
-    // Validate referencePrice
-    const refNum = rawReference !== undefined && rawReference !== null ? parseFloat(String(rawReference)) : NaN;
-    const hasValidRef = Number.isFinite(refNum) && refNum > 0;
-
-    // Fail closed if BOTH prices are completely absent or invalid
-    if (!hasValidOnChain && !hasValidRef) {
-      return {
-        isValid: false,
-        status: 'INVALID_RESPONSE',
-        reason: `Invalid price data: onChainPrice ("${rawOnChain}") and referencePrice ("${rawReference}") are both invalid.`
-      };
-    }
-
-    // Calculate spread deterministically ONLY when both values are real, positive finite numbers
-    let spread: number | null = null;
-    if (hasValidOnChain && hasValidRef) {
-      spread = (onChainNum - refNum) / refNum;
-    }
-
-    // Parse timestamp
-    let updatedAt = Date.now();
-    if (item.updatedAt !== undefined && item.updatedAt !== null) {
-      const parsedTime = typeof item.updatedAt === 'number' ? item.updatedAt : Date.parse(String(item.updatedAt));
-      if (!isNaN(parsedTime) && parsedTime > 0) {
-        updatedAt = parsedTime;
+      if (typeof p.tokenContractAddress !== 'string' || p.tokenContractAddress.trim().length === 0) {
+        return { isValid: false, priceData: [], status: 'INVALID_RESPONSE', reason: `Price item at index ${i} missing tokenContractAddress.` };
       }
+
+      // Extract official tokenPrice & referencePrice
+      const rawTokenPrice = p.tokenPrice;
+      const rawReferencePrice = p.referencePrice;
+
+      // Validate tokenPrice
+      const tokenPriceNum = rawTokenPrice !== undefined && rawTokenPrice !== null ? parseFloat(String(rawTokenPrice)) : NaN;
+      const hasValidTokenPrice = Number.isFinite(tokenPriceNum) && tokenPriceNum > 0;
+
+      // Validate referencePrice
+      const refPriceNum = rawReferencePrice !== undefined && rawReferencePrice !== null ? parseFloat(String(rawReferencePrice)) : NaN;
+      const hasValidRefPrice = Number.isFinite(refPriceNum) && refPriceNum > 0;
+
+      // Fail closed if BOTH prices are completely absent or invalid
+      if (!hasValidTokenPrice && !hasValidRefPrice) {
+        return {
+          isValid: false,
+          priceData: [],
+          status: 'INVALID_RESPONSE',
+          reason: `Invalid price data at index ${i}: tokenPrice ("${rawTokenPrice}") and referencePrice ("${rawReferencePrice}") are both invalid.`
+        };
+      }
+
+      // Calculate spread deterministically ONLY when both values are real, positive finite numbers
+      let spread: number | null = null;
+      if (hasValidTokenPrice && hasValidRefPrice) {
+        spread = (tokenPriceNum - refPriceNum) / refPriceNum;
+      }
+
+      // Parse updatedAt
+      let updatedAt = Date.now();
+      const rawUpdatedAt = p.tokenPriceUpdatedAt ?? p.updatedAt;
+      if (rawUpdatedAt !== undefined && rawUpdatedAt !== null) {
+        const parsedTime = typeof rawUpdatedAt === 'number' ? rawUpdatedAt : Date.parse(String(rawUpdatedAt));
+        if (!isNaN(parsedTime) && parsedTime > 0) {
+          updatedAt = parsedTime;
+        }
+      }
+
+      priceList.push({
+        binanceChainId: String(p.binanceChainId ?? '56'),
+        tokenContractAddress: p.tokenContractAddress.trim(),
+        platformId: typeof p.platformId === 'number' ? p.platformId : undefined,
+        tokenPrice: hasValidTokenPrice ? tokenPriceNum : NaN,
+        referencePrice: hasValidRefPrice ? refPriceNum : NaN,
+        spread,
+        tokenPriceUpdatedAt: updatedAt
+      });
     }
 
     return {
       isValid: true,
-      priceData: {
-        chainId: String(item.chainId ?? '56'),
-        contractAddress: String(item.contractAddress ?? expectedContract).trim(),
-        onChainPrice: hasValidOnChain ? onChainNum : NaN,
-        referencePrice: hasValidRef ? refNum : NaN,
-        spread,
-        updatedAt
-      }
+      priceData: priceList
     };
   }
 
   /**
-   * Defensive validation for Underlying Market Data response.
+   * Defensive validation for Underlying Market response.
+   * Documented schema:
+   * data -> statusInfo (openState, marketStatus, reasonCode, reasonMsg, nextOpenTime, nextCloseTime), marketData (referencePrice)
    */
   private validateUnderlyingMarketDataResponse(
     json: unknown
@@ -610,15 +673,18 @@ export class BinanceRwaClient {
       return { isValid: false, status: 'INVALID_RESPONSE', reason: 'Field "data" is missing or not an object.' };
     }
 
-    // Extract status fields
-    const rawMarketStatus = typeof data.marketStatus === 'string' ? data.marketStatus.toLowerCase().trim() : undefined;
-    const rawStatus = typeof data.status === 'string' ? data.status.toLowerCase().trim() : undefined;
-    const rawReasonCode = typeof data.reasonCode === 'string' ? data.reasonCode.toUpperCase().trim() : undefined;
-    const rawReasonMsg = typeof data.reasonMsg === 'string' ? data.reasonMsg.trim() : undefined;
-    const openState = typeof data.openState === 'boolean' ? data.openState : undefined;
+    // Extract statusInfo (documented) or direct fields (envelope fallback)
+    const statusInfo = (typeof data.statusInfo === 'object' && data.statusInfo !== null)
+      ? (data.statusInfo as Record<string, unknown>)
+      : data;
 
-    // Check if empty or unavailable
-    if (!rawMarketStatus && !rawStatus && !rawReasonCode && openState === undefined) {
+    const rawMarketStatus = typeof statusInfo.marketStatus === 'string' ? statusInfo.marketStatus.toLowerCase().trim() : undefined;
+    const rawReasonCode = typeof statusInfo.reasonCode === 'string' ? statusInfo.reasonCode.toUpperCase().trim() : (statusInfo.reasonCode === null ? null : undefined);
+    const rawReasonMsg = typeof statusInfo.reasonMsg === 'string' ? statusInfo.reasonMsg.trim() : (statusInfo.reasonMsg === null ? null : undefined);
+    const openState = typeof statusInfo.openState === 'boolean' ? statusInfo.openState : undefined;
+
+    // Check if statusInfo is empty
+    if (!rawMarketStatus && rawReasonCode === undefined && openState === undefined) {
       return {
         isValid: true,
         marketData: {
@@ -631,18 +697,28 @@ export class BinanceRwaClient {
     // Determine typed RwaMarketStatus
     const status = this.mapToRwaMarketStatus({
       marketStatus: rawMarketStatus,
-      status: rawStatus,
-      reasonCode: rawReasonCode,
+      reasonCode: rawReasonCode ?? undefined,
       openState
     });
 
     // Parse timing fields
-    const nextOpenTime = typeof data.nextOpenTime === 'number' && data.nextOpenTime > 0 ? data.nextOpenTime : undefined;
-    const nextCloseTime = typeof data.nextCloseTime === 'number' && data.nextCloseTime > 0 ? data.nextCloseTime : undefined;
+    const nextOpenTime = typeof statusInfo.nextOpenTime === 'number' && statusInfo.nextOpenTime > 0 ? statusInfo.nextOpenTime : undefined;
+    const nextCloseTime = typeof statusInfo.nextCloseTime === 'number' && statusInfo.nextCloseTime > 0 ? statusInfo.nextCloseTime : undefined;
+
+    // Parse marketData.referencePrice
+    let referencePrice: number | null = null;
+    const marketData = (typeof data.marketData === 'object' && data.marketData !== null) ? (data.marketData as Record<string, unknown>) : null;
+    if (marketData && marketData.referencePrice !== undefined && marketData.referencePrice !== null) {
+      const parsedRef = parseFloat(String(marketData.referencePrice));
+      if (Number.isFinite(parsedRef) && parsedRef > 0) {
+        referencePrice = parsedRef;
+      }
+    }
 
     let updatedAt = Date.now();
-    if (data.updatedAt !== undefined && data.updatedAt !== null) {
-      const parsedTime = typeof data.updatedAt === 'number' ? data.updatedAt : Date.parse(String(data.updatedAt));
+    const rawUpdatedAt = data.updatedAt ?? statusInfo.updatedAt;
+    if (rawUpdatedAt !== undefined && rawUpdatedAt !== null) {
+      const parsedTime = typeof rawUpdatedAt === 'number' ? rawUpdatedAt : Date.parse(String(rawUpdatedAt));
       if (!isNaN(parsedTime) && parsedTime > 0) {
         updatedAt = parsedTime;
       }
@@ -652,11 +728,13 @@ export class BinanceRwaClient {
       isValid: true,
       marketData: {
         status,
-        rawStatus: rawMarketStatus ?? rawStatus,
+        rawMarketStatus,
         rawReasonCode,
         rawReasonMsg,
+        openState,
         nextOpenTime,
         nextCloseTime,
+        referencePrice,
         updatedAt
       }
     };
@@ -667,11 +745,10 @@ export class BinanceRwaClient {
    */
   private mapToRwaMarketStatus(fields: {
     marketStatus?: string;
-    status?: string;
     reasonCode?: string;
     openState?: boolean;
   }): RwaMarketStatus {
-    const s = fields.marketStatus ?? fields.status ?? '';
+    const s = fields.marketStatus ?? '';
     const r = fields.reasonCode ?? '';
 
     // Halted check

@@ -47,57 +47,107 @@ Implemented in [`src/binance/request-signer.ts`](file:///C:/Users/NO%20GO%20NO/S
 The RWA Data API is the primary authority for tokenized equity information on BSC.
 
 #### 2.1.1 RWA Token Search & Discovery
-* **Endpoint**: `GET /api/v1/dex/market/rwa/search`
+* **Official Endpoint**: `GET /api/v1/dex/market/rwa/search`
 * **Gateway Path**: `/build/api/v1/dex/market/rwa/search`
 * **Authentication**: Signed (`X-OC-APIKEY`, `X-OC-TIMESTAMP`, `X-OC-SIGN`)
-* **Parameters**: `keyword=bNVDA&chainId=56`
-* **Response Fields**:
-  - `data[].chainId`: string (`"56"`)
-  - `data[].contractAddress`: string (e.g. `0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495`)
-  - `data[].symbol`: string (`"bNVDA"`)
-  - `data[].name`: string (`"Backed NVIDIA"`)
-  - `data[].decimals`: number (`18`)
-  - `data[].underlyingTicker`: string (`"NVDA"`)
-  - `data[].platformId`: number (`3` = bStock)
+* **Official Query Parameters**:
+  - `keyword` (string, required): Asset ticker or search term (e.g. `bNVDA`).
+  - `platformId` (number, optional): Platform filter (e.g. `3` for bStocks).
+  - *Note*: `chainId` is NOT sent to this endpoint per official schema.
+* **Documented Response Schema**:
+  ```json
+  {
+    "code": 0,
+    "msg": "success",
+    "data": [
+      {
+        "ticker": "NVDA",
+        "companyName": "NVIDIA Corp",
+        "assets": [
+          {
+            "platformId": 3,
+            "binanceChainId": "56",
+            "tokenContractAddress": "0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495",
+            "tokenSymbol": "bNVDA",
+            "assetType": "stock"
+          }
+        ]
+      }
+    ],
+    "success": true
+  }
+  ```
 * **Status**: Implemented in [`src/binance/rwa-client.ts`](file:///C:/Users/NO%20GO%20NO/StockPilot/src/binance/rwa-client.ts) (`searchRwaToken`). Fails closed to `UNAVAILABLE` when token is not found.
 
 #### 2.1.2 Dual-Price Discovery & Spread Intelligence
-* **Endpoint**: `GET /api/v1/dex/market/rwa/price`
+* **Official Endpoint**: `GET /api/v1/dex/market/rwa/price`
 * **Gateway Path**: `/build/api/v1/dex/market/rwa/price`
 * **Authentication**: Signed (`X-OC-APIKEY`, `X-OC-TIMESTAMP`, `X-OC-SIGN`)
-* **Parameters**: `contractAddress=0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495&chainId=56`
-* **Response Fields**:
-  - `data[].onChainPrice`: Real-time spot price on BSC.
-  - `data[].referencePrice`: Real-time underlying traditional equity reference price.
-  - `data[].updatedAt`: Timestamp of the price observation.
+* **Official Query Parameters**:
+  - `binanceChainId` (string, required): e.g. `"56"`
+  - `tokenContractAddresses` (string, required): Comma-separated token contract addresses (e.g. `"0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495"`).
+* **Documented Response Schema**:
+  ```json
+  {
+    "code": 0,
+    "msg": "success",
+    "data": [
+      {
+        "binanceChainId": "56",
+        "tokenContractAddress": "0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495",
+        "platformId": 3,
+        "tokenPrice": "124.50",
+        "referencePrice": "123.80",
+        "tokenPriceUpdatedAt": 1727250000000
+      }
+    ],
+    "success": true
+  }
+  ```
 * **Deterministic Spread Calculation**:
-  $$\text{spread} = \frac{\text{onChainPrice} - \text{referencePrice}}{\text{referencePrice}}$$
+  $$\text{spread} = \frac{\text{tokenPrice} - \text{referencePrice}}{\text{referencePrice}}$$
 * **Zero-Mock Rules**:
-  - Evaluated **only** when both `onChainPrice` and `referencePrice` parse to positive finite numbers (`> 0`).
+  - Evaluated **only** when both `tokenPrice` and `referencePrice` parse to positive finite numbers (`> 0`).
   - If either price is absent, non-positive, or invalid, `spread` returns `null` and the UI renders `—`.
 * **Status**: Implemented in [`src/binance/rwa-client.ts`](file:///C:/Users/NO%20GO%20NO/StockPilot/src/binance/rwa-client.ts) (`getRwaPriceAndSpread`).
 
-#### 2.1.3 Authoritative Market Status & Underlying Market Data
-* **Authoritative Developer REST Endpoint**: `GET /api/v1/dex/market/rwa/underlying-market-data`
-* **Gateway Path**: `/build/api/v1/dex/market/rwa/underlying-market-data`
+#### 2.1.3 Authoritative Market Status & Underlying Market
+* **Official Developer REST Endpoint**: `GET /api/v1/dex/market/rwa/underlying-market`
+* **Gateway Path**: `/build/api/v1/dex/market/rwa/underlying-market`
 * **Authentication**: Signed (`X-OC-APIKEY`, `X-OC-TIMESTAMP`, `X-OC-SIGN`)
-* **Parameters**: `contractAddress=0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495&chainId=56`
-* **Response Fields**:
-  - `data.marketStatus`: string (e.g. `'regular'`, `'open'`, `'closed'`, `'pause'`, `'halted'`)
-  - `data.openState`: boolean (`true` / `false`)
-  - `data.reasonCode`: string (e.g. `'TRADING'`, `'MARKET_CLOSED'`, `'ASSET_PAUSED'`, `'HALTED'`)
-  - `data.reasonMsg`: string (e.g. `'Paused for session transition'`)
-  - `data.nextOpenTime`: number (ms epoch)
-  - `data.nextCloseTime`: number (ms epoch)
+* **Official Query Parameters**:
+  - `binanceChainId` (string, required): e.g. `"56"`
+  - `tokenContractAddress` (string, required): Token contract address (e.g. `"0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495"`).
+* **Documented Response Schema**:
+  ```json
+  {
+    "code": 0,
+    "msg": "success",
+    "data": {
+      "statusInfo": {
+        "openState": true,
+        "marketStatus": "regular",
+        "reasonCode": "TRADING",
+        "reasonMsg": "Market is trading normally",
+        "nextOpenTime": 1727272860000,
+        "nextCloseTime": 1727292540000
+      },
+      "marketData": {
+        "referencePrice": "123.80"
+      }
+    },
+    "success": true
+  }
+  ```
 * **Deterministic Internal Status Mapping**:
   - `OPEN`: Active session (`'open'`, `'regular'`, `'premarket'`, `'postmarket'`, `'overnight'`, or `openState=true` with `TRADING`).
   - `CLOSED`: Outside trading session (`'closed'`, `openState=false`, `MARKET_CLOSED`).
   - `PAUSED`: Temporary pause or corporate action halt (`'pause'`, `'ASSET_PAUSED'`, `'MARKET_PAUSED'`).
   - `HALTED`: Volatility circuit breaker or exchange halt (`'halt'`, `'HALTED'`).
-  - `UNAVAILABLE`: Unpopulated or empty status envelope.
+  - `UNAVAILABLE`: Unpopulated or missing `statusInfo`.
   - `UNKNOWN`: Unrecognized or custom status string.
 * **Provider Integration**: `BinanceRwaMarketStateProvider` implements `IMarketStateProvider`, resolving `MARKET_OPEN`, `MARKET_CLOSED`, or `REFERENCE_STALE` when telemetry freshness exceeds `maxStalenessSeconds`.
-* **Note on Public BAPI Endpoints**: The endpoints `/market/status/ai` and `/asset/market/status/ai` on `www.binance.com/bapi` are internal to the AI skill wrapper; the core authenticated backend client queries the verified developer REST endpoint `/api/v1/dex/market/rwa/underlying-market-data`.
+* **Important Note**: The endpoint is officially named `/underlying-market` (not `/underlying-market-data`). The endpoints `/market/status/ai` and `/asset/market/status/ai` on `www.binance.com/bapi` are internal to the AI skill wrapper; the core authenticated backend client queries the verified developer REST endpoint `/api/v1/dex/market/rwa/underlying-market`.
 
 ---
 
