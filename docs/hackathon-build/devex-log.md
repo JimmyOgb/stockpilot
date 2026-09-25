@@ -165,5 +165,30 @@ Every real Binance integration attempt must record:
   - Updated `BinanceRequestSigner` and `BinanceMarketDataClient` to incorporate `/build` base path automatically into canonical paths for HMAC-SHA256 signatures.
   - Verified with 46 passing unit tests. Zero mocks introduced.
 
+### Entry #009: BinanceRwaClient Implementation & Spread Intelligence Pass
+- **Date / Time**: 2026-09-25 09:07:00 UTC
+- **Module**: `src/binance/rwa-client.ts` & `tests/binance-rwa-client.test.ts`
+- **Endpoints Implemented**:
+  1. `GET /api/v1/dex/market/rwa/search`
+  2. `GET /api/v1/dex/market/rwa/price`
+  3. `GET /api/v1/dex/market/rwa/underlying-market-data`
+- **Request Type**: Authenticated REST (HMAC-SHA256 pre-hashed with `/build` prefix and signed query params)
+- **Result**: Success (25/25 unit tests passing in `tests/binance-rwa-client.test.ts`; 71/71 tests passing project-wide across 4 test suites; clean build).
+- **Core Features**:
+  1. **RWA Token Search**: Queries verified RWA token directory by keyword (e.g. `bNVDA`) or contract address on BSC (`chainId=56`). Fails closed to `UNAVAILABLE` if no token is found.
+  2. **Deterministic Spread Intelligence**: Fetches both `onChainPrice` and `referencePrice`. Computes:
+     `spread = (onChainPrice - referencePrice) / referencePrice`
+     Strictly returns `spread: null` (rendering `—` in UI) if either price is missing, non-positive, or NaN.
+  3. **Authoritative Market Status Mapping**: Interrogates `/api/v1/dex/market/rwa/underlying-market-data` and maps to typed internal representation: `OPEN`, `CLOSED`, `PAUSED`, `HALTED`, `UNAVAILABLE`, `UNKNOWN`. Preserves raw status and reason message.
+  4. **Provider Integration**: Implements `BinanceRwaMarketStateProvider` satisfying `IMarketStateProvider`, evaluating `MARKET_OPEN`, `MARKET_CLOSED`, or `REFERENCE_STALE` on staleness threshold breach.
+- **Architectural Discovery & Resolution**:
+  - Clarified that the public BAPI endpoints `/market/status/ai` and `/asset/market/status/ai` on `binance.com/bapi` are internal to the AI skill wrapper, whereas the official authenticated developer REST API on `web3.binance.com/build` uses `/api/v1/dex/market/rwa/underlying-market-data`.
+  - The URL construction deterministically ensures `/build` appears exactly once in both the full URL (`https://web3.binance.com/build/api/v1/dex/market/rwa/...`) and the pre-hash signature (`/build/api/v1/dex/market/rwa/...`), preventing duplicate `/build/build` bugs.
+- **Test Integrity**:
+  - 100% hermetic tests running against injected synthetic mock transport.
+  - Zero live network dependencies during normal test runs.
+  - No live financial calls made; zero credentials leaked.
+
+
 
 
