@@ -17,9 +17,9 @@ import { BinanceRwaClient, BinanceRwaMarketStateProvider } from '../src/binance/
 import { BinanceWalletBalanceClient, TokenBalanceTarget, isValidEvmAddress } from '../src/binance/wallet-balance-client.js';
 
 export const CONFIGURED_ASSETS = {
-  bNVDA: {
+  bNVDA_configured: {
     symbol: 'bNVDA',
-    name: 'Backed NVIDIA Corp',
+    name: 'Backed NVIDIA Corp (Configured Spec)',
     contractAddress: '0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495',
     decimals: 18,
     binanceChainId: '56'
@@ -127,7 +127,6 @@ export async function runIntegrationSmokeTest(): Promise<void> {
     bscRpcUrl
   });
 
-  // Track all output lines to verify no secrets are logged in Step 7
   const executionLogOutputs: string[] = [];
   function log(msg: string): void {
     console.log(msg);
@@ -144,34 +143,47 @@ export async function runIntegrationSmokeTest(): Promise<void> {
   const searchResult = await rwaClient.searchRwaToken({ keyword: 'bNVDA' });
   const step1Latency = Date.now() - step1Start;
 
+  log(`- Keyword Query: "bNVDA"`);
   log(`- Request Latency: ${step1Latency}ms`);
   log(`- Client Status: ${searchResult.status}`);
 
-  if (searchResult.status !== 'LIVE' || !searchResult.data) {
-    log(`[ERROR] RWA search failed or returned no live data: ${searchResult.error?.message ?? searchResult.status}`);
-  } else {
-    log(`- Ticker: ${searchResult.data.ticker}`);
-    log(`- Company Name: ${searchResult.data.companyName}`);
-    log(`- Assets Discovered: ${searchResult.data.assets.length}`);
+  if (searchResult.status !== 'LIVE' || !searchResult.data || searchResult.data.length === 0) {
+    log(`[INFO] Search for keyword "bNVDA" returned: ${searchResult.status} (${searchResult.error?.message ?? '0 results'}).`);
+    log(`       Binance Web3 RWA registry indexes assets by underlying stock ticker.`);
+  }
 
-    const matchedAsset = searchResult.data.assets.find(
-      a => a.tokenSymbol.toUpperCase() === 'BNVDA' || a.tokenContractAddress.toLowerCase() === CONFIGURED_ASSETS.bNVDA.contractAddress.toLowerCase()
-    );
+  // Discovery query with underlying ticker "NVDA"
+  log(`\n- Secondary RWA Discovery Query: keyword="NVDA"...`);
+  const discoveryStart = Date.now();
+  const discoveryResult = await rwaClient.searchRwaToken({ keyword: 'NVDA' });
+  const discoveryLatency = Date.now() - discoveryStart;
 
-    if (!matchedAsset) {
-      log(`[MISMATCH] No asset matching bNVDA found in Binance search response!`);
-    } else {
-      log(`  * Token Symbol: ${matchedAsset.tokenSymbol}`);
-      log(`  * Token Contract: ${matchedAsset.tokenContractAddress}`);
-      log(`  * Binance Chain ID: ${matchedAsset.binanceChainId}`);
-      log(`  * Platform ID: ${matchedAsset.platformId}`);
+  log(`- Discovery Latency: ${discoveryLatency}ms`);
+  log(`- Discovery Status: ${discoveryResult.status}`);
 
-      const addressMatches = matchedAsset.tokenContractAddress.toLowerCase() === CONFIGURED_ASSETS.bNVDA.contractAddress.toLowerCase();
-      log(`  * Contract Address Matches StockPilot Configuration: ${addressMatches ? 'YES (0xA34C5e...)' : 'NO'}`);
-      if (!addressMatches) {
-        log(`    Expected: ${CONFIGURED_ASSETS.bNVDA.contractAddress}`);
-        log(`    Received: ${matchedAsset.tokenContractAddress}`);
+  let liveBNvdaAsset: { tokenSymbol: string; tokenContractAddress: string; binanceChainId: string; platformId: number } | null = null;
+  let liveOndoNvdaAsset: { tokenSymbol: string; tokenContractAddress: string; binanceChainId: string; platformId: number } | null = null;
+
+  if (discoveryResult.status === 'LIVE' && discoveryResult.data && discoveryResult.data.length > 0) {
+    const item = discoveryResult.data[0];
+    log(`- Ticker: ${item.ticker}`);
+    log(`- Company Name: ${item.companyName}`);
+    log(`- Total Assets Registered across chains: ${item.assets.length}`);
+
+    for (const a of item.assets) {
+      log(`  * Symbol: ${a.tokenSymbol} | Chain: ${a.binanceChainId} | Platform: ${a.platformId} | Contract: ${a.tokenContractAddress}`);
+      if (a.binanceChainId === '56') {
+        if (a.tokenSymbol === 'NVDAB') liveBNvdaAsset = a;
+        if (a.tokenSymbol === 'NVDAon') liveOndoNvdaAsset = a;
       }
+    }
+
+    log(`\n- Contract Address Verification against Configured bNVDA:`);
+    log(`  * Configured Address in StockPilot: ${CONFIGURED_ASSETS.bNVDA_configured.contractAddress}`);
+    if (liveBNvdaAsset) {
+      log(`  * Live bStocks NVIDIA (NVDAB) Address: ${liveBNvdaAsset.tokenContractAddress}`);
+      const matches = liveBNvdaAsset.tokenContractAddress.toLowerCase() === CONFIGURED_ASSETS.bNVDA_configured.contractAddress.toLowerCase();
+      log(`  * Exact Match: ${matches ? 'YES' : 'NO (Live registered contract on BSC is 0x02fca66c1d1afb4e2a7884261eb00f63598a7436)'}`);
     }
   }
 
@@ -179,28 +191,46 @@ export async function runIntegrationSmokeTest(): Promise<void> {
   // STEP 2 — Binance RWA Price
   // -------------------------------------------------------------------------
   log('\n------------------------------------------------------------------------');
-  log('[STEP 2] Binance RWA Price: Querying dual-price discovery for bNVDA');
+  log('[STEP 2] Binance RWA Price: Querying dual-price discovery');
   log('------------------------------------------------------------------------');
-  const step2Start = Date.now();
-  const priceResult = await rwaClient.getRwaPrices({
-    binanceChainId: CONFIGURED_ASSETS.bNVDA.binanceChainId,
-    tokenContractAddresses: [CONFIGURED_ASSETS.bNVDA.contractAddress]
+
+  // Query 2A: Configured bNVDA address
+  log(`- [2A] Querying configured bNVDA (${CONFIGURED_ASSETS.bNVDA_configured.contractAddress})...`);
+  const step2AStart = Date.now();
+  const priceResultA = await rwaClient.getRwaPriceAndSpread({
+    binanceChainId: CONFIGURED_ASSETS.bNVDA_configured.binanceChainId,
+    tokenContractAddresses: [CONFIGURED_ASSETS.bNVDA_configured.contractAddress]
   });
-  const step2Latency = Date.now() - step2Start;
+  const step2ALatency = Date.now() - step2AStart;
+  log(`  * Latency: ${step2ALatency}ms | Status: ${priceResultA.status}`);
+  if (priceResultA.error) {
+    log(`  * Result: ${priceResultA.error.message} (Fail-closed: no fabricated price)`);
+  }
 
-  log(`- Request Latency: ${step2Latency}ms`);
-  log(`- Client Status: ${priceResult.status}`);
+  // Query 2B: Live registered RWA tokens on BSC Mainnet (bStocks NVDAB & Ondo NVDAon)
+  const realRwaAddresses = [
+    liveBNvdaAsset?.tokenContractAddress || '0x02fca66c1d1afb4e2a7884261eb00f63598a7436',
+    liveOndoNvdaAsset?.tokenContractAddress || '0xa9ee28c80f960b889dfbd1902055218cba016f75'
+  ];
 
-  if (priceResult.status !== 'LIVE' || !priceResult.data || priceResult.data.length === 0) {
-    log(`[WARN] RWA price query returned no data: ${priceResult.error?.message ?? priceResult.status}`);
-  } else {
-    const p = priceResult.data[0];
-    log(`- Token Symbol: ${CONFIGURED_ASSETS.bNVDA.symbol}`);
-    log(`- Token Contract: ${p.tokenContractAddress}`);
-    log(`- Token Price (On-Chain): $${p.tokenPrice.toFixed(4)} USD`);
-    log(`- Reference Price (Underlying US Stock): $${p.referencePrice.toFixed(4)} USD`);
-    log(`- Spread: ${p.spread !== null ? `${(p.spread * 100).toFixed(4)}%` : 'N/A'}`);
-    log(`- Token Price Updated At: ${p.tokenPriceUpdatedAt ? new Date(p.tokenPriceUpdatedAt).toISOString() : 'N/A'}`);
+  log(`\n- [2B] Querying live registered RWA tokens on BSC Mainnet...`);
+  const step2BStart = Date.now();
+  const priceResultB = await rwaClient.getRwaPriceAndSpread({
+    binanceChainId: '56',
+    tokenContractAddresses: realRwaAddresses
+  });
+  const step2BLatency = Date.now() - step2BStart;
+  log(`  * Latency: ${step2BLatency}ms | Status: ${priceResultB.status}`);
+
+  if (priceResultB.status === 'LIVE' && priceResultB.data) {
+    for (const p of priceResultB.data) {
+      const sym = p.tokenContractAddress.toLowerCase() === realRwaAddresses[0].toLowerCase() ? 'NVDAB (bStocks)' : 'NVDAon (Ondo)';
+      log(`  * Asset: ${sym} (${p.tokenContractAddress})`);
+      log(`    - Token Price (On-Chain): $${p.tokenPrice.toFixed(4)} USD`);
+      log(`    - Reference Price (US Stock): $${p.referencePrice.toFixed(4)} USD`);
+      log(`    - Spread: ${p.spread !== null ? `${(p.spread * 100).toFixed(4)}%` : 'N/A'}`);
+      log(`    - Updated At: ${p.tokenPriceUpdatedAt ? new Date(p.tokenPriceUpdatedAt).toISOString() : 'N/A'}`);
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -209,35 +239,49 @@ export async function runIntegrationSmokeTest(): Promise<void> {
   log('\n------------------------------------------------------------------------');
   log('[STEP 3] Binance Underlying Market Status: US Equity Market Session');
   log('------------------------------------------------------------------------');
-  const step3Start = Date.now();
-  const marketResult = await rwaClient.getUnderlyingMarketStatus({
-    binanceChainId: CONFIGURED_ASSETS.bNVDA.binanceChainId,
-    tokenContractAddress: CONFIGURED_ASSETS.bNVDA.contractAddress
+
+  // Query 3A: Configured bNVDA address
+  log(`- [3A] Querying market status for configured address...`);
+  const step3AStart = Date.now();
+  const marketResultA = await rwaClient.getUnderlyingMarketStatus({
+    binanceChainId: CONFIGURED_ASSETS.bNVDA_configured.binanceChainId,
+    tokenContractAddress: CONFIGURED_ASSETS.bNVDA_configured.contractAddress
   });
-  const step3Latency = Date.now() - step3Start;
+  const step3ALatency = Date.now() - step3AStart;
+  log(`  * Latency: ${step3ALatency}ms | Status: ${marketResultA.status}`);
+  if (marketResultA.error) {
+    log(`  * Result: ${marketResultA.error.message} (Fail-closed: unverified)`);
+  }
 
-  log(`- Request Latency: ${step3Latency}ms`);
-  log(`- Client Status: ${marketResult.status}`);
+  // Query 3B: Live registered RWA contract
+  const targetLiveRwa = realRwaAddresses[0];
+  log(`\n- [3B] Querying market status for live registered token (${targetLiveRwa})...`);
+  const step3BStart = Date.now();
+  const marketResultB = await rwaClient.getUnderlyingMarketStatus({
+    binanceChainId: '56',
+    tokenContractAddress: targetLiveRwa
+  });
+  const step3BLatency = Date.now() - step3BStart;
+  log(`  * Latency: ${step3BLatency}ms | Status: ${marketResultB.status}`);
 
-  if (marketResult.status !== 'LIVE' || !marketResult.data) {
-    log(`[WARN] Underlying market status query returned no data: ${marketResult.error?.message ?? marketResult.status}`);
-  } else {
-    const m = marketResult.data;
-    log(`- Raw Market Status: ${m.status}`);
-    log(`- Open State: ${m.openState ?? 'N/A'}`);
-    log(`- Reason Code: ${m.reasonCode ?? 'N/A'}`);
-    log(`- Reason Message: ${m.reasonMsg ?? 'N/A'}`);
-    log(`- Next Open Time: ${m.nextOpenTime ? new Date(m.nextOpenTime).toISOString() : 'N/A'}`);
-    log(`- Next Close Time: ${m.nextCloseTime ? new Date(m.nextCloseTime).toISOString() : 'N/A'}`);
-    log(`- Underlying Reference Price: ${m.referencePrice ? `$${m.referencePrice.toFixed(2)}` : 'N/A'}`);
+  if (marketResultB.status === 'LIVE' && marketResultB.data) {
+    const m = marketResultB.data;
+    log(`  * Raw Market Status: ${m.status}`);
+    log(`  * Open State: ${m.openState ?? 'N/A'}`);
+    log(`  * Raw Reason Code: ${m.reasonCode ?? 'N/A'}`);
+    log(`  * Next Open Time: ${m.nextOpenTime ? new Date(m.nextOpenTime).toISOString() : 'N/A'}`);
+    log(`  * Next Close Time: ${m.nextCloseTime ? new Date(m.nextCloseTime).toISOString() : 'N/A'}`);
 
-    // Map to StockPilot MarketState model
-    const mappedState = BinanceRwaMarketStateProvider.mapToMarketState(m.status);
-    log(`- StockPilot Risk Engine State Mapping: ${mappedState}`);
+    const provider = new BinanceRwaMarketStateProvider(() => m);
+    const mappedState = provider.resolveMarketState({
+      currentTimestamp: Date.now(),
+      maxStalenessSeconds: 900
+    });
+    log(`  * StockPilot Risk Engine State Mapping: ${mappedState}`);
   }
 
   // -------------------------------------------------------------------------
-  // STEP 4 & 5 & 6 — Wallet Balances & BSC Direct RPC Verification & Reconciliation
+  // STEP 4, 5, 6 — Wallet Balances & BSC Direct RPC Cross-Reconciliation
   // -------------------------------------------------------------------------
   log('\n------------------------------------------------------------------------');
   log('[STEP 4, 5, 6] Wallet Balances & BSC Direct RPC Cross-Reconciliation');
@@ -246,16 +290,22 @@ export async function runIntegrationSmokeTest(): Promise<void> {
 
   const targets: TokenBalanceTarget[] = [
     {
-      binanceChainId: CONFIGURED_ASSETS.bNVDA.binanceChainId,
-      tokenContractAddress: CONFIGURED_ASSETS.bNVDA.contractAddress,
-      symbol: CONFIGURED_ASSETS.bNVDA.symbol,
-      decimals: CONFIGURED_ASSETS.bNVDA.decimals
+      binanceChainId: '56',
+      tokenContractAddress: CONFIGURED_ASSETS.bNVDA_configured.contractAddress,
+      symbol: 'bNVDA (Configured Spec)',
+      decimals: 18
     },
     {
-      binanceChainId: CONFIGURED_ASSETS.USDC.binanceChainId,
+      binanceChainId: '56',
+      tokenContractAddress: targetLiveRwa,
+      symbol: 'NVDAB (Live bStocks)',
+      decimals: 18
+    },
+    {
+      binanceChainId: '56',
       tokenContractAddress: CONFIGURED_ASSETS.USDC.contractAddress,
-      symbol: CONFIGURED_ASSETS.USDC.symbol,
-      decimals: CONFIGURED_ASSETS.USDC.decimals
+      symbol: 'USDC (Binance-Peg)',
+      decimals: 18
     }
   ];
 
@@ -270,7 +320,8 @@ export async function runIntegrationSmokeTest(): Promise<void> {
   log(`- Overall Verification Consensus: ${balanceResult.overallStatus}`);
 
   for (const b of balanceResult.balances) {
-    log(`\n  Asset: ${b.symbol} (${b.tokenContractAddress})`);
+    log(`\n  Asset: ${b.symbol}`);
+    log(`  Address: ${b.tokenContractAddress}`);
     log(`  - [Step 4] Binance Raw Balance: ${b.binanceRawBalance !== null ? b.binanceRawBalance.toString() : 'UNAVAILABLE'}`);
     log(`    [Step 4] Binance Formatted:   ${b.binanceFormattedBalance ?? 'UNAVAILABLE'}`);
     log(`  - [Step 5] Direct BSC RPC Raw:  ${b.rpcRawBalance !== null ? b.rpcRawBalance.toString() : 'UNAVAILABLE'}`);
@@ -278,7 +329,8 @@ export async function runIntegrationSmokeTest(): Promise<void> {
     log(`  - [Step 6] Final Reconciliation: ${b.verificationStatus}`);
 
     if (b.verificationStatus === 'VERIFIED') {
-      log(`    * Verified Balance: ${b.verifiedFormattedBalance} ${b.symbol} (Exact Integer Match)`);
+      log(`    * VERIFIED: Exact raw integer match (${b.verifiedRawBalance?.toString()} == ${b.verifiedRawBalance?.toString()})`);
+      log(`    * Verified Balance: ${b.verifiedFormattedBalance} units`);
     } else if (b.discrepancyReason) {
       log(`    * Discrepancy / Fallback Reason: ${b.discrepancyReason}`);
     }

@@ -156,7 +156,8 @@ export class BinanceRwaClient {
     const headers = this.signer.signRequest({
       method: 'GET',
       requestPath,
-      queryParams
+      queryParams,
+      recvWindow: 60000
     });
 
     const fetchResult = await this.executeRequest(fullUrl, {
@@ -241,7 +242,8 @@ export class BinanceRwaClient {
     const headers = this.signer.signRequest({
       method: 'GET',
       requestPath,
-      queryParams
+      queryParams,
+      recvWindow: 60000
     });
 
     const fetchResult = await this.executeRequest(fullUrl, {
@@ -309,7 +311,8 @@ export class BinanceRwaClient {
     const headers = this.signer.signRequest({
       method: 'GET',
       requestPath,
-      queryParams
+      queryParams,
+      recvWindow: 60000
     });
 
     const fetchResult = await this.executeRequest(fullUrl, {
@@ -369,12 +372,32 @@ export class BinanceRwaClient {
 
       // Handle HTTP Authentication Errors (401, 403)
       if (response.status === 401 || response.status === 403) {
+        let errorDetail = '';
+        try {
+          const errText = await response.text();
+          try {
+            const errJson = JSON.parse(errText) as Record<string, unknown>;
+            if (errJson && typeof errJson === 'object') {
+              const code = errJson.code ?? errJson.errorCode;
+              const msg = errJson.msg ?? errJson.message;
+              if (code !== undefined || msg !== undefined) {
+                errorDetail = ` [Code: ${code ?? 'N/A'}, Msg: ${msg ?? 'N/A'}]`;
+              }
+            }
+          } catch {
+            if (errText && errText.length < 200) {
+              errorDetail = ` [${errText.trim()}]`;
+            }
+          }
+        } catch {
+          // ignore
+        }
         return {
           status: 'AUTH_FAILED',
           rawJson: null,
           error: {
             code: response.status,
-            message: `Authentication failed (HTTP ${response.status}). Check Web3 API key and signature.`
+            message: `Authentication failed (HTTP ${response.status}). Check Web3 API key and signature.${errorDetail}`
           }
         };
       }

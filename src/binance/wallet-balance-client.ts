@@ -307,7 +307,8 @@ export class BinanceWalletBalanceClient {
     const headers = this.signer.signRequest({
       method: 'POST',
       requestPath,
-      body: bodyPayload
+      body: bodyPayload,
+      recvWindow: 60000
     });
 
     const controller = new AbortController();
