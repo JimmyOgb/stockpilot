@@ -12,64 +12,93 @@ import {
   RebalanceProposal
 } from '../types/index.js';
 
+/**
+ * StockPilot Application Safety Policy Defaults
+ * NOTE: These are NOT exchange-enforced constants; they are configurable StockPilot safety policies.
+ */
+export const DEFAULT_SAFETY_POLICY_SLIPPAGE_OPEN_BPS = 50;   // 0.50% max slippage policy during open market
+export const DEFAULT_SAFETY_POLICY_SLIPPAGE_CLOSED_BPS = 25; // 0.25% tighter slippage policy during closed market
+
 export interface MarketStateParams {
   referenceTimestamp: number;
   currentTimestamp: number;
   maxStalenessSeconds: number;
   forceState?: MarketState; // For testing deterministic overrides
+  provider?: IMarketStateProvider;
 }
 
 /**
- * Evaluates the market state:
- * - REFERENCE_STALE: Reference price age exceeds max allowable staleness.
- * - MARKET_OPEN: Data is fresh AND regular US equity market is active (09:30 - 16:00 ET, Mon-Fri).
- * - MARKET_CLOSED: Data is fresh BUT regular US equity market is closed.
+ * Market State Provider Interface
+ * Allows pluggable market session evaluators (e.g. calendar schedules, oracle feeds, or API halt codes).
  */
-export function evaluateMarketState(params: MarketStateParams): MarketState {
-  if (params.forceState) {
-    return params.forceState;
-  }
+export interface IMarketStateProvider {
+  resolveMarketState(params: MarketStateParams): MarketState;
+}
 
-  const ageSeconds = Math.max(0, Math.floor((params.currentTimestamp - params.referenceTimestamp) / 1000));
-  if (ageSeconds > params.maxStalenessSeconds) {
-    return 'REFERENCE_STALE';
-  }
+/**
+ * Default Calendar Market State Provider
+ * Evaluates market regime using configured reference calendar and quote age staleness.
+ */
+export class DefaultCalendarMarketStateProvider implements IMarketStateProvider {
+  public resolveMarketState(params: MarketStateParams): MarketState {
+    if (params.forceState) {
+      return params.forceState;
+    }
 
-  // Convert current timestamp to US Eastern Time (ET)
-  const date = new Date(params.currentTimestamp);
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    hour12: false,
-    weekday: 'short',
-    hour: 'numeric',
-    minute: 'numeric'
-  });
+    const ageSeconds = Math.max(0, Math.floor((params.currentTimestamp - params.referenceTimestamp) / 1000));
+    if (ageSeconds > params.maxStalenessSeconds) {
+      return 'REFERENCE_STALE';
+    }
 
-  const parts = formatter.formatToParts(date);
-  let weekday = '';
-  let hour = 0;
-  let minute = 0;
+    // Convert current timestamp to US Eastern Time (ET) reference calendar
+    const date = new Date(params.currentTimestamp);
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      hour12: false,
+      weekday: 'short',
+      hour: 'numeric',
+      minute: 'numeric'
+    });
 
-  for (const part of parts) {
-    if (part.type === 'weekday') weekday = part.value;
-    if (part.type === 'hour') hour = parseInt(part.value, 10);
-    if (part.type === 'minute') minute = parseInt(part.value, 10);
-  }
+    const parts = formatter.formatToParts(date);
+    let weekday = '';
+    let hour = 0;
+    let minute = 0;
 
-  const isWeekend = weekday === 'Sat' || weekday === 'Sun';
-  if (isWeekend) {
+    for (const part of parts) {
+      if (part.type === 'weekday') weekday = part.value;
+      if (part.type === 'hour') hour = parseInt(part.value, 10);
+      if (part.type === 'minute') minute = parseInt(part.value, 10);
+    }
+
+    const isWeekend = weekday === 'Sat' || weekday === 'Sun';
+    if (isWeekend) {
+      return 'MARKET_CLOSED';
+    }
+
+    const currentMinutes = hour * 60 + minute;
+    const marketOpenMinutes = 9 * 60 + 30; // 09:30 ET
+    const marketCloseMinutes = 16 * 60;    // 16:00 ET
+
+    if (currentMinutes >= marketOpenMinutes && currentMinutes < marketCloseMinutes) {
+      return 'MARKET_OPEN';
+    }
+
     return 'MARKET_CLOSED';
   }
+}
 
-  const currentMinutes = hour * 60 + minute;
-  const marketOpenMinutes = 9 * 60 + 30; // 09:30 ET
-  const marketCloseMinutes = 16 * 60;    // 16:00 ET
+const defaultMarketStateProvider = new DefaultCalendarMarketStateProvider();
 
-  if (currentMinutes >= marketOpenMinutes && currentMinutes < marketCloseMinutes) {
-    return 'MARKET_OPEN';
-  }
-
-  return 'MARKET_CLOSED';
+/**
+ * Evaluates the market state via the pluggable IMarketStateProvider:
+ * - REFERENCE_STALE: Reference price age exceeds max allowable staleness.
+ * - MARKET_OPEN: Data is fresh AND regular equity reference market is active.
+ * - MARKET_CLOSED: Data is fresh BUT regular reference market is closed (stricter safety policy).
+ */
+export function evaluateMarketState(params: MarketStateParams): MarketState {
+  const provider = params.provider ?? defaultMarketStateProvider;
+  return provider.resolveMarketState(params);
 }
 
 /**
@@ -184,10 +213,10 @@ export function generateRebalanceProposal(params: RebalanceProposalParams): Reba
     };
   }
 
-  // Determine slippage limit based on market state
+  // Determine application safety-policy slippage limit based on market state
   const slippageLimitBps = marketState === 'MARKET_OPEN'
-    ? (params.maxSlippageOpenBps ?? 50)
-    : (params.maxSlippageClosedBps ?? 25);
+    ? (params.maxSlippageOpenBps ?? DEFAULT_SAFETY_POLICY_SLIPPAGE_OPEN_BPS)
+    : (params.maxSlippageClosedBps ?? DEFAULT_SAFETY_POLICY_SLIPPAGE_CLOSED_BPS);
 
   // Target stock value in USD
   const targetStockValueUsd = (strategy.targetStockWeightBps / 10000) * snapshot.totalValueUsd;

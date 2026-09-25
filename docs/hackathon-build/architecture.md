@@ -1,7 +1,8 @@
 # StockPilot Architecture Specification
 
 > **BNB Hack: Tokenized Stocks Edition**  
-> **System**: StockPilot Autonomous BSC Portfolio Rebalancer
+> **System**: StockPilot Autonomous BSC Portfolio Rebalancer  
+> **Status**: Updated post-official documentation audit (Zero Mock Architecture)
 
 ---
 
@@ -20,17 +21,20 @@ flowchart TD
     
     subgraph DataGathering [Data Ingestion]
         Agent -->|3. Query Balances & Quotes| BinanceAPI[Binance Web3 API Client]
-        BinanceAPI -->|Fetch BSC balances & spot prices| BSCMarket[(BSC Mainnet / Reference Oracles)]
+        BinanceAPI -->|Fetch BSC balances & spot quotes| BSCMarket[(Binance Web3 / BSC Mainnet)]
         BinanceAPI -.->|Return fresh portfolio & quotes| Agent
     end
 
-    subgraph DeterministicEngine [Deterministic Strategy & Risk Engine]
-        Agent -->|4. Current Portfolio + Strategy| RiskEngine[Strategy & Risk Engine]
-        RiskEngine -->|Check Market State| MktCheck{Market State?}
+    subgraph StateDetection [Pluggable Market State Adapter]
+        Agent -->|4. Ingest Reference Timestamp & Market Data| MktAdapter[IMarketStateProvider Adapter]
+        MktAdapter --> MktCheck{Market State?}
         MktCheck -->|REFERENCE_STALE| HaltStale[Fail Closed: Block Trade]
-        MktCheck -->|MARKET_CLOSED| ApplyStrict[Apply Strict Closed-Hours Rules]
+        MktCheck -->|MARKET_CLOSED| ApplyStrict[Apply Strict Policy Bounds]
         MktCheck -->|MARKET_OPEN| CalcDrift[Calculate Portfolio Drift]
         ApplyStrict --> CalcDrift
+    end
+
+    subgraph DeterministicEngine [Deterministic Strategy & Risk Engine]
         CalcDrift --> DriftCheck{Drift > Threshold?}
         DriftCheck -->|No| NoRebalance[No Trade Needed]
         DriftCheck -->|Yes| GenerateProposal[Generate Spot Rebalance Proposal]
@@ -38,29 +42,31 @@ flowchart TD
 
     subgraph Verification [Independent Verification Layer]
         GenerateProposal -->|5. Submit Evidence Packet| Verifier[GenLayer Verification Adapter]
-        Verifier -->|Check Evidence: Drift, Bounds, Staleness| VerifierDecision{Consensus / Allow?}
+        Verifier -->|Evaluate: Drift, Bounds, Freshness, Limits| VerifierDecision{Consensus / Allow?}
         VerifierDecision -->|REJECT / UNKNOWN| HaltVerify[Fail Closed: Abort Execution]
         VerifierDecision -->|ALLOW| ApprovedProposal[Signed / Approved Action]
     end
 
     subgraph Execution [Spot Execution & Settlement]
-        ApprovedProposal -->|6. Execute Spot Rebalance| ExecAdapter[Binance Web3 Wallet Adapter]
-        ExecAdapter -->|7. Submit Signed Spot Swap| BSC[BSC Mainnet]
-        BSC -->|8. Transaction Receipt / Hash| ExecAdapter
-        ExecAdapter -->|9. Final Receipt| AuditLog[(Persistence / Audit History)]
+        ApprovedProposal -->|6. Prepare Spot Trade| ExecAdapter[Binance Web3 Wallet / RFQ Adapter]
+        ExecAdapter --> ExecMode{Execution Mode?}
+        ExecMode -->|SWAP: Standard Token| BroadcastSwap[Broadcast Raw Swap Tx]
+        ExecMode -->|RFQ: Tokenized Equity| SubmitRFQ[Sign EIP-712 Typed Data & Submit /order/submit]
+        BroadcastSwap --> BSC[(BSC Mainnet)]
+        SubmitRFQ --> BSC
+        BSC -->|7. Transaction Receipt / Settlement| ExecAdapter
+        ExecAdapter -->|8. Final Receipt| AuditLog[(Persistence / Audit History)]
     end
 
     HaltStale --> AuditLog
     NoRebalance --> AuditLog
     HaltVerify --> AuditLog
-    AuditLog -.->|10. Live Status & Receipts| UI
+    AuditLog -.->|9. Live Status & Receipts| UI
 ```
 
 ---
 
 ## 3. Subsystem Separation & Interfaces
-
-To maintain modularity and auditability, components are strictly separated into dedicated modules:
 
 ### 3.1 Strategy UI (`src/client` / Web Dashboard)
 - Visualizes user's plain-English strategy and structured target allocations.
@@ -69,71 +75,47 @@ To maintain modularity and auditability, components are strictly separated into 
   - 🟢 `MARKET_OPEN`
   - 🟡 `MARKET_CLOSED`
   - 🔴 `REFERENCE_STALE` (Trading blocked)
-- Displays full audit timeline of rebalance evaluations, verification checks, and transaction receipts.
+- **Zero Mock Policy**: Displays explicit `"Not Connected"`, `"No live data available"`, and `"—"` states until real API/wallet feeds are connected.
 
 ### 3.2 Agent / Decision Engine (`src/agent/`)
 - Orchestrates polling loops and event-driven rebalance checks.
-- Packages portfolio snapshots, strategy specifications, and market data into immutable evaluation contexts.
-- Coordinates the pipeline: Fetch → Evaluate → Verify → Execute → Log.
+- Coordinates the pipeline: Fetch → Evaluate State → Compute Drift → Verify → Execute → Log.
 
 ### 3.3 Binance Web3 API Client (`src/binance/`)
-- Encapsulates all calls to Binance Web3 APIs and DEX routing services on BSC.
-- Methods:
-  - `getWalletBalances(address: string): Promise<AssetBalance[]>`
-  - `getSpotQuote(fromToken: string, toToken: string, amount: bigint): Promise<SpotQuote>`
-  - `getReferenceMarketStatus(symbol: string): Promise<MarketReferenceStatus>`
-- Records timestamps, latencies, request/response headers, and error codes directly to the DevEx log.
+- Encapsulates authenticated calls to the **Binance Web3 Trading & Market APIs**:
+  - `POST /api/v1/dex/market/price`: Real-time spot price discovery.
+  - `POST /api/v1/dex/balance/token-balances-by-address`: Wallet holdings on BSC.
+  - `GET /api/v1/dex/aggregator/quote`: Token swap quotes and execution mode (`SWAP` vs `RFQ`).
+  - `GET /api/v1/dex/aggregator/swap`: Generates EIP-712 typed-data to sign (RFQ) or raw swap calldata.
+  - `POST /api/v1/dex/aggregator/order/submit`: Submits signed RFQ orders with idempotency UUID.
+  - `GET /api/v1/dex/aggregator/order/{orderId}`: Polls settlement status.
+- Generates required `X-OC-APIKEY`, `X-OC-TIMESTAMP`, and `X-OC-SIGN` headers.
 
-### 3.4 Strategy & Risk Engine (`src/strategy/`)
+### 3.4 Pluggable Market State Provider (`src/strategy/market-state-provider.ts`)
+- **Architectural Change**: Decoupled from hardcoded assumptions into an `IMarketStateProvider` interface.
+- Evaluates whether trading sessions are active:
+  - Supports rule-based schedules (e.g. US equities calendar) as an initial provider implementation.
+  - Allows injecting live external market calendar feeds or reacting directly to Binance Web3 API market halt codes (`40369` / `40367`).
+  - Fails closed to `REFERENCE_STALE` whenever data freshness exceeds `MAX_STALENESS_SECONDS`.
+
+### 3.5 Strategy & Risk Engine (`src/strategy/`)
 - Pure, deterministic calculation functions:
   - `calculateAllocation(balances, prices): PortfolioAllocation`
   - `calculateDrift(currentAllocation, targetAllocation): DriftResult`
-  - `evaluateMarketState(referenceTimestamp, quoteTimestamp, marketHours): MarketState`
   - `buildRebalanceProposal(allocation, drift, limits): RebalanceProposal | null`
-- Zero external dependencies in core calculation math, facilitating 100% test coverage with unit tests.
+- **Application Safety-Policy Defaults**: Slippage bounds (e.g., 50 bps for open, 25 bps for closed) and trade caps are explicitly modeled as StockPilot application safety policies rather than factual exchange constants.
 
-### 3.5 Verification Adapter (`src/verification/`)
-- Adapts the proposed rebalance into a structured evidence packet for the **GenLayer verification layer**.
-- Evidence evaluated:
-  - User strategy hash & target weights
-  - Starting portfolio balances & oracle prices
-  - Calculated drift and required minimum threshold
-  - Proposed spot trade direction (BUY/SELL) and size
-  - Quote timestamp freshness (< max allowed staleness)
-  - Market state confirmation
-  - Max allowable trade slippage and max trade cap per rebalance
-- **Never executes trades**. Returns a verified attestation (`ALLOW` or `REJECT` with reason code).
+### 3.6 Verification Adapter (`src/verification/`)
+- Independent verification boundary connecting to **GenLayer**.
+- Evaluates cryptographic evidence packets (drift calculation, quote freshness, market state, limits).
+- **Does not execute trades**. Returns verifiable `ALLOW` or `REJECT`.
+- Zero mock policy: Remains uncommitted until real GenLayer contract/RPC verification is invoked.
 
-### 3.6 Execution Adapter (`src/execution/`)
-- Interacts with **Binance Web3 Wallet / Agentic Wallet** to sign and broadcast BSC mainnet spot transactions.
-- Spot-only enforcement: Rejects any parameter requesting leverage, margin, or perpetual contracts.
-- Returns transaction hash, gas used, confirmed block, and final execution status.
+### 3.7 Execution Adapter (`src/execution/`)
+- Manages transaction signing and settlement dispatch via **Binance Web3 Wallet / Agentic Wallet**:
+  - For standard tokens: signs and broadcasts raw swap calldata on BSC mainnet.
+  - For tokenized equities (bNVDA, Ondo): signs EIP-712 typed-data within the strict 30-second quote window and submits via `/api/v1/dex/aggregator/order/submit`.
+- Captures transaction receipt and settlement hash.
 
-### 3.7 Persistence & Audit Store (`src/storage/`)
-- Maintains an append-only log of every evaluation cycle.
-- Records:
-  - Timestamp
-  - Portfolio snapshot
-  - Market state
-  - Drift calculation
-  - Rebalance proposal (if triggered)
-  - Verification packet & result
-  - On-chain transaction hash or fail-closed reason
-
----
-
-## 4. Market State Definition & Behavior
-
-| State | Underlying Market Condition | Tokenized Stock Trading on BSC | Permitted Rebalancing Actions |
-|---|---|---|---|
-| `MARKET_OPEN` | Traditional equities market is active; live oracle feeds updating | Active | Standard rebalancing permitted within normal slippage limits (e.g. ≤ 0.5%). |
-| `MARKET_CLOSED` | US equity market closed (weekends, after-hours) | Active on-chain | Tighter risk bounds applied: reduced max rebalance size, tighter slippage tolerance (e.g. ≤ 0.25%), drift threshold may be increased to prevent reacting to transient illiquid spikes. |
-| `REFERENCE_STALE` | Price feed or oracle not updated within max threshold (e.g. > 15 mins) | Halted / Untrusted | **Fail closed**. All rebalancing proposals are strictly blocked. Alert dispatched. |
-
----
-
-## 5. Security & Secrets Management
-
-- Zero secrets in frontend code or Git repository.
-- `.env` strictly git-ignored; template documented in `.env.example`.
-- API keys, private keys, and RPC endpoints accessed exclusively server-side.
+### 3.8 Persistence & Audit Store (`src/storage/`)
+- Maintains an immutable append-only record of all evaluations, verification outcomes, and transaction receipts.
