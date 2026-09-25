@@ -149,4 +149,21 @@ Every real Binance integration attempt must record:
   - Script created: `scripts/smoke-test-market-data.ts` (runnable via `npm run test:smoke`).
   - Execution outcome: Executed locally. In strict adherence to the Zero Mock Policy, the smoke test detected that live credentials (`BINANCE_WEB3_API_KEY` and `BINANCE_WEB3_API_SECRET`) were not yet provisioned in `.env`, printed a clear informational pause message, and exited cleanly without producing or fabricating fake market data.
 
+### Entry #008: Official Documentation Audit & Binance Skills Hub Installation
+- **Date / Time**: 2026-09-25 08:50:00 UTC
+- **Endpoints & Docs Audited**:
+  - Binance Web3 Developer Portal (`https://web3.binance.com/en/dev-docs/authentication.md`, `llms-full.txt`)
+  - Dedicated RWA Data APIs (`/api/v1/dex/market/rwa/price`, `/api/v1/dex/market/rwa/search`, `/api/v1/dex/market/rwa/underlying-market-data`)
+  - Binance Agentic Wallet (`@binance/agentic-wallet` CLI `baw`, skills hub)
+  - Installed Skills: `binance-tokenized-securities-info`, `binance-agentic-wallet`
+- **Key Discoveries**:
+  1. **Base Path Requirement**: Official docs verify that the Web3 API Gateway requires base URL `https://web3.binance.com/build` and pre-hash signature must prepend `/build` to the request path (e.g., `/build/api/v1/...`). Omitting `/build` triggers signature mismatch `40102`.
+  2. **Tokenized Securities Calendar State**: Discovered live public Binance DeFI endpoints (`https://www.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/market/token/rwa/asset/market/status/ai` and `/market/status/ai`) that return deterministic market state (`premarket`, `regular`, `postmarket`, `overnight`, `closed`, `pause`) and next open/close timestamps without needing third-party scraping.
+  3. **Share Multiplier Rule**: `referencePrice = tokenInfo.price / sharesMultiplier`. Fractional/multi-share backing ratios are exposed by the API and must not be assumed 1:1.
+  4. **Agentic Wallet Security Scoping**: The Agentic Wallet CLI (`baw`) enforces user-configured policies (daily allowances, whitelist of approved contract addresses). It provides EIP-712 typed-data signing for RFQ orders (`baw sign-message preview/execute`) rather than direct private key export.
+- **Code Adjustments**:
+  - Updated `BinanceRequestSigner` and `BinanceMarketDataClient` to incorporate `/build` base path automatically into canonical paths for HMAC-SHA256 signatures.
+  - Verified with 46 passing unit tests. Zero mocks introduced.
+
+
 

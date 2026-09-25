@@ -144,6 +144,8 @@ describe('BinanceRequestSigner', () => {
       });
 
       const options = {
+        method: 'GET',
+        requestPath: '/build/api/v1/dex/market/token/search',
         timestamp: documentedTimestamp,
         queryParams: {
           chainId: 56,
@@ -153,9 +155,10 @@ describe('BinanceRequestSigner', () => {
 
       const headers = signer.signRequest(options);
 
-      // Verify canonical query: chainId=56&keyword=bNVDA
-      // Payload to sign: "chainId=56&keyword=bNVDA" + "2026-05-11T10:08:57.715Z"
-      const expectedPayload = 'chainId=56&keyword=bNVDA2026-05-11T10:08:57.715Z';
+      // Official preHash formula: timestamp + method + requestPath + body
+      // requestPath with query: /build/api/v1/dex/market/token/search?chainId=56&keyword=bNVDA
+      // For GET: body is empty string
+      const expectedPayload = `${documentedTimestamp}GET/build/api/v1/dex/market/token/search?chainId=56&keyword=bNVDA`;
       const expectedSignature = createHmac('sha256', testApiSecret)
         .update(expectedPayload, 'utf8')
         .digest('base64');
@@ -174,12 +177,17 @@ describe('BinanceRequestSigner', () => {
       });
 
       const body = [{ chainId: '56', contractAddress: '0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495' }];
-      const headers = signer.signRequest({
+      const options = {
+        method: 'POST',
+        requestPath: '/build/api/v1/dex/market/price',
         timestamp: documentedTimestamp,
         body
-      });
+      };
 
-      const expectedPayload = `${JSON.stringify(body)}${documentedTimestamp}`;
+      const headers = signer.signRequest(options);
+
+      // Official preHash formula: timestamp + method + requestPath + body
+      const expectedPayload = `${documentedTimestamp}POST/build/api/v1/dex/market/price${JSON.stringify(body)}`;
       const expectedSignature = createHmac('sha256', testApiSecret)
         .update(expectedPayload, 'utf8')
         .digest('base64');

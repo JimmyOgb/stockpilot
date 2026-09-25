@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "skills": {
+    "binance-agentic-wallet": {
+      "source": "binance/binance-skills-hub",
+      "sourceType": "github",
+      "skillPath": "skills/binance-web3/binance-agentic-wallet/SKILL.md",
+      "computedHash": "c38c82ce8136843b9dedbc3fba3a3a09fdf5b79d95911a028b7d79db107641fe"
+    },
+    "binance-tokenized-securities-info": {
+      "source": "binance/binance-skills-hub",
+      "sourceType": "github",
+      "skillPath": "skills/binance-web3/binance-tokenized-securities-info/SKILL.md",
+      "computedHash": "6076f1e30aaae4817be002c9890133e6e58f70e0501e1e17d9c1a97e7efb319b"
+    }
+  }
+}

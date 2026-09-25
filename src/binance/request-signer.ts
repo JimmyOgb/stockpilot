@@ -2,7 +2,11 @@
  * StockPilot — Binance Web3 API Request Signer
  *
  * Implements deterministic HMAC-SHA256 request authentication
- * for the Binance Web3 API (X-OC-APIKEY, X-OC-TIMESTAMP, X-OC-SIGN).
+ * for the Binance Web3 API according to official documentation:
+ * https://web3.binance.com/en/dev-docs/authentication.md
+ *
+ * Formula: preHash = timestamp + method + requestPath + body
+ * Headers: X-OC-APIKEY, X-OC-TIMESTAMP, X-OC-SIGN, (optional X-OC-NONCE, X-OC-RECV-WINDOW)
  *
  * Independent of Express, UI, wallets, or trading logic.
  * NEVER logs or exposes the API secret.
@@ -20,9 +24,21 @@ export interface BinanceAuthHeaders {
   'X-OC-TIMESTAMP': string;
   'X-OC-SIGN': string;
   'X-OC-NONCE'?: string;
+  'X-OC-RECV-WINDOW'?: string;
 }
 
 export interface SignRequestOptions {
+  /**
+   * HTTP Method in UPPERCASE (e.g. 'GET', 'POST'). Defaults to 'GET'.
+   */
+  method?: string;
+
+  /**
+   * Full HTTP request path including the '/build' base-path prefix.
+   * e.g. '/build/api/v1/dex/market/token/search'
+   */
+  requestPath?: string;
+
   /**
    * Explicit timestamp (Date, millisecond epoch number, or ISO 8601 string).
    * Enables deterministic testing and NTP synchronization.
@@ -33,6 +49,11 @@ export interface SignRequestOptions {
    * Optional anti-replay nonce.
    */
   nonce?: string;
+
+  /**
+   * Optional receive window in milliseconds (default 5000).
+   */
+  recvWindow?: number;
 
   /**
    * Request query parameters as an object or raw query string.
@@ -94,7 +115,6 @@ export class BinanceRequestSigner {
       if (isNaN(parsed)) {
         throw new Error(`Invalid timestamp: String "${trimmed}" is not a valid ISO 8601 format.`);
       }
-      // Ensure proper ISO representation
       return new Date(parsed).toISOString();
     }
 
@@ -156,51 +176,86 @@ export class BinanceRequestSigner {
   }
 
   /**
-   * Constructs the payload string to sign according to the Binance Web3 API specification:
-   * Combines canonical parameters (query or body) with the ISO 8601 timestamp.
+   * Normalizes the requestPath to ensure the '/build' prefix is present as required by the official API.
+   * e.g. '/api/v1/dex/market/token/search' -> '/build/api/v1/dex/market/token/search'
    */
-  public buildPayloadToSign(params: {
-    canonicalQuery: string;
-    canonicalBody: string;
-    isoTimestamp: string;
-  }): string {
-    let payloadPart = '';
-
-    if (params.canonicalQuery.length > 0) {
-      payloadPart = params.canonicalQuery;
-    } else if (params.canonicalBody.length > 0) {
-      payloadPart = params.canonicalBody;
+  public normalizeRequestPath(path?: string): string {
+    if (!path || path.trim().length === 0) {
+      return '/build';
     }
 
-    // Specification: Combining the request parameters with the X-OC-TIMESTAMP value
-    return `${payloadPart}${params.isoTimestamp}`;
+    let p = path.trim();
+    if (!p.startsWith('/')) {
+      p = `/${p}`;
+    }
+
+    if (!p.startsWith('/build')) {
+      p = `/build${p}`;
+    }
+
+    return p;
+  }
+
+  /**
+   * Constructs the pre-hash string exactly as documented in official Binance Web3 API:
+   * preHash = timestamp + method + requestPath + body
+   *
+   * where:
+   * - timestamp is the ISO 8601 UTC string (e.g. '2026-05-11T10:08:57.715Z')
+   * - method is in UPPERCASE ('GET', 'POST', etc.)
+   * - requestPath is the full path with '/build' prefix and raw query string if present
+   * - body is the raw body string, or empty string '' for GET/HEAD
+   */
+  public buildPreHashString(params: {
+    isoTimestamp: string;
+    method: string;
+    requestPath: string;
+    canonicalQuery: string;
+    canonicalBody: string;
+  }): string {
+    const uppercaseMethod = params.method.toUpperCase();
+    let fullPath = params.requestPath;
+
+    if (params.canonicalQuery.length > 0) {
+      fullPath = `${fullPath}?${params.canonicalQuery}`;
+    }
+
+    const bodyPart = (uppercaseMethod === 'GET' || uppercaseMethod === 'HEAD') ? '' : params.canonicalBody;
+
+    // Official formula: timestamp + method + requestPath + body
+    return `${params.isoTimestamp}${uppercaseMethod}${fullPath}${bodyPart}`;
   }
 
   /**
    * Computes deterministic Base64-encoded HMAC-SHA256 signature.
    */
-  public computeSignature(payloadToSign: string): string {
+  public computeSignature(preHashString: string): string {
     return createHmac('sha256', this.apiSecret)
-      .update(payloadToSign, 'utf8')
+      .update(preHashString, 'utf8')
       .digest('base64');
   }
 
   /**
-   * Generates the authenticated headers for a Binance Web3 API request.
+   * Generates authenticated headers for a Binance Web3 API request.
    * NEVER exposes or returns the API secret.
    */
   public signRequest(options: SignRequestOptions = {}): BinanceAuthHeaders {
     const isoTimestamp = this.formatTimestamp(options.timestamp);
+    const method = (options.method ?? 'GET').toUpperCase();
+    const rawPath = options.requestPath ?? '/build';
+    const normalizedPath = this.normalizeRequestPath(rawPath);
     const canonicalQuery = this.canonicalizeQueryParams(options.queryParams);
     const canonicalBody = this.canonicalizeBody(options.body);
 
-    const payloadToSign = this.buildPayloadToSign({
+    const preHash = this.buildPreHashString({
+      isoTimestamp,
+      method,
+      requestPath: normalizedPath,
       canonicalQuery,
-      canonicalBody,
-      isoTimestamp
+      canonicalBody
     });
 
-    const signature = this.computeSignature(payloadToSign);
+    const signature = this.computeSignature(preHash);
 
     const headers: BinanceAuthHeaders = {
       'X-OC-APIKEY': this.apiKey,
@@ -210,6 +265,10 @@ export class BinanceRequestSigner {
 
     if (options.nonce && typeof options.nonce === 'string' && options.nonce.trim().length > 0) {
       headers['X-OC-NONCE'] = options.nonce.trim();
+    }
+
+    if (options.recvWindow && Number.isFinite(options.recvWindow) && options.recvWindow > 0) {
+      headers['X-OC-RECV-WINDOW'] = String(options.recvWindow);
     }
 
     return headers;

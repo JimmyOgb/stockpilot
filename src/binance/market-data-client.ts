@@ -74,14 +74,14 @@ export class BinanceMarketDataClient {
       throw new Error('BinanceMarketDataClient requires a valid BinanceRequestSigner instance.');
     }
     this.signer = config.signer;
-    this.baseUrl = (config.baseUrl ?? 'https://web3.binance.com').replace(/\/+$/, '');
+    this.baseUrl = (config.baseUrl ?? 'https://web3.binance.com/build').replace(/\/+$/, '');
     this.timeoutMs = config.timeoutMs ?? 10000;
     this.fetchFn = config.fetchFn ?? globalThis.fetch;
   }
 
   /**
    * Searches for tokens by keyword (symbol or contract address) on Binance Web3 API.
-   * Endpoint: GET /api/v1/dex/market/token/search
+   * Endpoint: GET /build/api/v1/dex/market/token/search
    */
   public async searchToken(query: TokenSearchQuery): Promise<MarketDataResult<VerifiedTokenMetadata[]>> {
     const now = Date.now();
@@ -103,10 +103,13 @@ export class BinanceMarketDataClient {
     }
 
     const endpointPath = '/api/v1/dex/market/token/search';
+    const requestPath = `/build${endpointPath}`;
     const queryString = this.signer.canonicalizeQueryParams(queryParams);
     const fullUrl = `${this.baseUrl}${endpointPath}?${queryString}`;
 
     const headers = this.signer.signRequest({
+      method: 'GET',
+      requestPath,
       queryParams
     });
 
@@ -147,7 +150,7 @@ export class BinanceMarketDataClient {
 
   /**
    * Batch queries real-time token spot prices.
-   * Endpoint: POST /api/v1/dex/market/price
+   * Endpoint: POST /build/api/v1/dex/market/price
    */
   public async getPrices(queries: TokenPriceQuery[]): Promise<MarketDataResult<VerifiedTokenPrice[]>> {
     const now = Date.now();
@@ -173,9 +176,12 @@ export class BinanceMarketDataClient {
     });
 
     const endpointPath = '/api/v1/dex/market/price';
+    const requestPath = `/build${endpointPath}`;
     const fullUrl = `${this.baseUrl}${endpointPath}`;
 
     const headers = this.signer.signRequest({
+      method: 'POST',
+      requestPath,
       body: bodyPayload
     });
 

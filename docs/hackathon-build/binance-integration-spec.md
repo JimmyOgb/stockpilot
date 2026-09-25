@@ -11,30 +11,34 @@
 
 All requests to private/signed endpoints on the Binance Web3 API require cryptographic request signing:
 
-* **Official Portal**: `https://web3.binance.com/build` / `https://web3.binance.com/en/dev-docs/`
-* **Base URL**: `https://web3.binance.com` (REST paths typically prefixed with `/build` or directly `/api/v1/...`)
+* **Official Portal**: `https://web3.binance.com/en/dev-docs/introduction` & `https://web3.binance.com/en/dev-docs/authentication`
+* **Base URL**: `https://web3.binance.com/build` (All API requests are served from `/build/api/v1/...`)
 * **Headers**:
   * `X-OC-APIKEY`: Web3 API Key issued via Binance Web3 developer portal.
-  * `X-OC-TIMESTAMP`: Current UTC timestamp in ISO 8601 format with milliseconds (e.g. `2026-09-25T08:15:30.123Z`). Must be within `recv_window` (default: ±5,000 ms).
-  * `X-OC-SIGN`: Base64-encoded cryptographic signature (HMAC-SHA256 or Ed25519) computed over the concatenated request payload and timestamp using the API Secret.
+  * `X-OC-TIMESTAMP`: Current UTC timestamp in ISO 8601 format with milliseconds (e.g. `2026-05-11T10:08:57.715Z`).
+  * `X-OC-SIGN`: Base64-encoded cryptographic signature (HMAC-SHA256) computed over the exact `preHash` string.
+  * `X-OC-RECV-WINDOW`: Optional allowed time deviation in ms (default `5000`, max `60000`).
+  * `X-OC-NONCE`: Optional unique request identifier for anti-replay.
   * `Content-Type`: `application/json`
 * **Common Authentication Errors**:
-  * `40102 Signature error`: Signature does not match or malformed payload.
+  * `40102 Signature error`: Signature does not match. **#1 Cause in documentation**: omitting the `/build` prefix from the signed `requestPath`.
   * `40100 Unauthorized`: Missing or invalid API key.
   * `42900 Request rate limit exceeded`: Rate limit exceeded.
 
-### 1.1 Signer Implementation Specification (`src/binance/request-signer.ts`)
+### 1.1 Official Pre-Hash Signature Specification
 
-StockPilot implements the `BinanceRequestSigner` utility with the following exact behaviors:
-- **Algorithm**: `HMAC-SHA256` outputting a Base64-encoded digest.
-- **Timestamp Formatting**: Generates ISO 8601 UTC timestamp with millisecond resolution (`YYYY-MM-DDTHH:mm:ss.sssZ`) via `.toISOString()`. Rejects invalid date objects or negative epoch values.
-- **Parameter Canonicalization**:
-  - **Query Parameters**: Keys sorted alphabetically (`Object.keys().sort()`), filtered of `undefined`/`null`, URI-encoded as `key=encodeURIComponent(value)` and joined with `&`.
-  - **Body Serialization**: Serialized deterministically as JSON string (`JSON.stringify(body)`).
-- **Canonical Payload Construction**:
-  $$\text{PayloadToSign} = (\text{CanonicalQuery} \lor \text{CanonicalBody} \lor \text{""}) + \text{ISOTimestamp}$$
-- **Zero-Secret Leak Guarantee**: The class stores `apiSecret` strictly in private memory. The returned `BinanceAuthHeaders` object exposes only `X-OC-APIKEY`, `X-OC-TIMESTAMP`, `X-OC-SIGN`, and optional `X-OC-NONCE`. All error messages sanitize credential context.
-- **Testing Verification**: Tested across 19 unit tests in `tests/binance-request-signer.test.ts` covering deterministic hashing, timestamp formats, query sorting, missing key/secret validation, and secret isolation.
+According to `https://web3.binance.com/en/dev-docs/authentication.md`, the signature is calculated by concatenating four components **without any separator**:
+
+$$\text{preHash} = \text{timestamp} + \text{method} + \text{requestPath} + \text{body}$$
+
+| Component | Rule | Example |
+|---|---|---|
+| `timestamp` | Exact ISO 8601 UTC string from `X-OC-TIMESTAMP` header | `2026-05-11T10:08:57.715Z` |
+| `method` | HTTP method in **UPPERCASE** | `GET` or `POST` |
+| `requestPath` | Full path **including the `/build` base-path prefix** plus raw query string | `/build/api/v1/dex/market/token/search?chainId=56&keyword=bNVDA` |
+| `body` | Raw body string for POST/PUT; **empty string `""` for GET/HEAD** | `[{"chainId":"56","contractAddress":"..."}]` |
+
+StockPilot implements this exact formula in [`src/binance/request-signer.ts`](file:///C:/Users/NO%20GO%20NO/StockPilot/src/binance/request-signer.ts) and validates it across 19 unit tests in [`tests/binance-request-signer.test.ts`](file:///C:/Users/NO%20GO%20NO/StockPilot/tests/binance-request-signer.test.ts).
 
 
 ---
