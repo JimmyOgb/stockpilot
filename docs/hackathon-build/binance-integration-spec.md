@@ -70,7 +70,7 @@ StockPilot implements the `BinanceRequestSigner` utility with the following exac
   ```
 * **BSC Applicability**: Fully applicable to BSC Mainnet.
 * **MVP Requirement**: Required for dynamic asset verification.
-* **Status**: Specification verified against documentation.
+* **Status**: Implemented in `src/binance/market-data-client.ts` (`searchToken`) with defensive schema validation. Tested across unit test suite.
 
 ---
 
@@ -149,7 +149,7 @@ StockPilot implements the `BinanceRequestSigner` utility with the following exac
   ```
 * **BSC Applicability**: Fully applicable.
 * **MVP Requirement**: Required for portfolio valuation and drift calculations.
-* **Status**: Verified.
+* **Status**: Implemented in `src/binance/market-data-client.ts` (`getPrices`) with batch querying, defensive numeric validation, and fail-closed handling. Tested across unit test suite.
 
 ---
 

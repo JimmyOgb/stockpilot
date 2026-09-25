@@ -125,3 +125,28 @@ Every real Binance integration attempt must record:
 - **Remaining Live Verification**:
   - Live handshake with Binance Web3 gateway once official API keys are provisioned to verify that gateway clock drift is within the ±5,000 ms `recv_window`.
 
+---
+
+### Entry #007: BinanceMarketDataClient Implementation & Smoke Test
+- **Date / Time**: 2026-09-25 08:38:00 UTC
+- **Endpoint / Module**: Binance Web3 Market Data Module (`src/binance/market-data-client.ts`)
+  1. `GET /api/v1/dex/market/token/search`
+  2. `POST /api/v1/dex/market/price`
+- **Purpose**: Implement read-only market data client for token search and real-time spot price queries with strict zero-mock runtime validation.
+- **Request Type**: REST (GET with signed query params, POST with signed JSON body)
+- **Result**: Success in deterministic testing (13/13 unit tests passing; 46/46 project-wide tests passing).
+- **Latency**: N/A during unit testing (simulated HTTP transport injected).
+- **Errors Handled**:
+  - HTTP 401/403: Mapped explicitly to typed `AUTH_FAILED`.
+  - HTTP 429: Mapped to typed `RATE_LIMITED`, capturing `Retry-After` header.
+  - Timeout / Abort: Mapped to typed `NETWORK_ERROR`.
+  - Binance API `code !== 0`: Mapped to typed `UNAVAILABLE` with exact server error code and message.
+  - Malformed JSON / missing fields / invalid non-positive prices: Mapped to `INVALID_RESPONSE` (fail-closed).
+- **Documentation Ambiguity Discovered**:
+  - The Binance documentation specifies that the price endpoint `/api/v1/dex/market/price` returns `price` as a string (e.g. `"124.50"`). The client enforces defensive runtime parsing (`parseFloat`) and verifies finite positivity (`> 0`) rather than relying on TypeScript casting.
+  - The search endpoint documentation permits searching by either symbol or contract address under the single `keyword` parameter.
+- **Live Smoke Test Execution**:
+  - Script created: `scripts/smoke-test-market-data.ts` (runnable via `npm run test:smoke`).
+  - Execution outcome: Executed locally. In strict adherence to the Zero Mock Policy, the smoke test detected that live credentials (`BINANCE_WEB3_API_KEY` and `BINANCE_WEB3_API_SECRET`) were not yet provisioned in `.env`, printed a clear informational pause message, and exited cleanly without producing or fabricating fake market data.
+
+

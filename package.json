@@ -10,7 +10,8 @@
     "start": "node dist/server/index.js",
     "dev": "tsx watch src/server/index.ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:smoke": "tsx scripts/smoke-test-market-data.ts"
   },
   "dependencies": {
     "dotenv": "^16.4.7",
