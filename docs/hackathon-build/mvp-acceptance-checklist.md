@@ -20,16 +20,18 @@
   - [x] Verified BSC USDC contract mapped: `0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d` (18 decimals).
   - [x] Dual-asset valuation (Stock + USDC = Total Portfolio Value).
 
-- [ ] **4. Portfolio Allocation Calculation**
+- [x] **4. Portfolio Allocation Calculation**
   - [x] Deterministic calculation of current USD value of stock holdings.
   - [x] Deterministic calculation of current USD value of stablecoin holdings.
   - [x] Exact basis point calculation of actual portfolio weights.
+  - [x] Fails closed to `INSUFFICIENT_PORTFOLIO_DATA` when balances are genuinely zero (never invents a 60/40 allocation).
 
-- [ ] **5. Drift Threshold Monitoring**
+- [x] **5. Drift Threshold Monitoring**
   - [x] Deterministic drift math: $|\text{Actual Weight} - \text{Target Weight}|$.
-  - [x] Strict threshold trigger: No trade proposed if drift < threshold.
+  - [x] Strict threshold trigger: No trade proposed if drift < threshold (`NO_ACTION`).
+  - [x] Threshold boundary precision (500 bps triggers, 499 bps holds `NO_ACTION`).
 
-- [ ] **6. Market-State Indicator & Pluggable Provider**
+- [x] **6. Market-State Indicator & Pluggable Provider**
   - [x] Pluggable `IMarketStateProvider` architecture decoupled from hardcoded logic.
   - [x] Visible UI badge with 3 explicit states:
     - 🟢 `MARKET_OPEN`: Normal execution bounds.
@@ -37,10 +39,12 @@
     - 🔴 `REFERENCE_STALE`: Stale oracle/quote; trade execution unconditionally blocked.
   - [x] Slippage bounds documented as StockPilot application safety policies (not market constants).
 
-- [ ] **7. Proposed Rebalance Generation**
-  - [x] Deterministic delta calculation.
+- [x] **7. Proposed Rebalance Generation**
+  - [x] Deterministic delta calculation and trade sizing in `src/strategy/portfolio-engine.ts`.
   - [x] Trade direction: `BUY_STOCK` or `SELL_STOCK`.
   - [x] Max single-rebalance cap circuit breaker ($5,000 USD default).
+  - [x] Real token-vs-reference price spread risk check (`RISK_BLOCKED` when spread exceeds `maxSpreadBps`).
+  - [x] 6 typed decision states: `NO_ACTION`, `REBALANCE_REQUIRED`, `INSUFFICIENT_PORTFOLIO_DATA`, `MARKET_CLOSED`, `DATA_UNAVAILABLE`, `RISK_BLOCKED`.
 
 - [ ] **8. Verification Gate (GenLayer Adapter)**
   - [x] Verification adapter maintained as independent verification boundary.
@@ -48,12 +52,12 @@
   - [x] Execution blocked unless verification returns `ALLOW`.
   - [x] Zero mock policy: No fabricated verification consensus responses.
 
-- [ ] **9. Binance Web3 API Integration**
+- [x] **9. Binance Web3 API Integration (Read-Only Telemetry & Verification)**
   - [x] Official API documentation audited (`https://web3.binance.com/build`).
   - [x] Exact endpoints documented in `docs/hackathon-build/binance-integration-spec.md`.
-  - [x] Authentication headers verified (`X-OC-APIKEY`, `X-OC-TIMESTAMP`, `X-OC-SIGN`).
-  - [x] RFQ execution flow verified for tokenized stocks (`/quote` -> `/swap` -> `/order/submit` with 30s expiry).
-  - [ ] Live client implementation (pending live credentials & connection).
+  - [x] Authentication headers verified (`X-OC-APIKEY`, `X-OC-TIMESTAMP`, `X-OC-SIGN`, `X-OC-RECV-WINDOW`).
+  - [x] Implemented `BinanceMarketDataClient`, `BinanceRwaClient`, `BinanceWalletBalanceClient`, and `BinanceRwaAssetResolver`.
+  - [x] Verified live read-only pipeline via smoke test (`npm run test:smoke`): `USER_WALLET_PORTFOLIO_VERIFIED`.
 
 - [ ] **10. Spot Transaction Execution**
   - [x] Execution adapter interface designed for both `SWAP` and `RFQ` flows.

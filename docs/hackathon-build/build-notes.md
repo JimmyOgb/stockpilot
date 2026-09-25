@@ -55,16 +55,25 @@ flowchart LR
 - [x] Typed market data client (`src/binance/market-data-client.ts`).
 - [x] 46/46 unit tests passing across vitest test suites.
 
-### Phase 2: Authoritative RWA Telemetry & Wallet Balances (NEXT)
-- [ ] Implement `BinanceRwaClient` (`src/binance/rwa-client.ts`):
+### Phase 2: Authoritative RWA Telemetry & Deterministic Portfolio Engine (COMPLETED)
+- [x] Implement `BinanceRwaClient` (`src/binance/rwa-client.ts`):
   - `searchRwaToken(keyword)`
-  - `getRwaPriceAndSpread(contractAddress)`: Retrieves `onchainPrice`, `referencePrice`, calculates `spread` or returns `null` (rendering `—`).
-  - `getAssetMarketStatus(contractAddress)`: Authoritative status (`open`, `closed`, `paused`, `halted`, `unavailable`, `unknown`).
-- [ ] Implement `BinanceWalletBalanceClient` (`src/binance/wallet-balance-client.ts`):
-  - Primary: `POST /api/v1/dex/balance/token-balances-by-address`
+  - `getRwaPriceAndSpread(query)`: Retrieves `tokenPrice`, `referencePrice`, calculates `spread` or returns `null` (rendering `—`).
+  - `getUnderlyingMarketStatus(contractAddress)`: Authoritative status (`OPEN`, `CLOSED`, `PAUSED`, `HALTED`, `UNAVAILABLE`, `UNKNOWN`).
+- [x] Implement `BinanceWalletBalanceClient` (`src/binance/wallet-balance-client.ts`):
+  - Primary: `POST /build/api/v1/dex/balance/token-balances-by-address`
   - Redundant: Direct BSC JSON-RPC `eth_call` for `balanceOf`.
-- [ ] Connect `BinanceRwaClient` into `IMarketStateProvider` adapter.
-- [ ] Unit tests for RWA client, spread math, and balance parsing.
+  - Zero-address rejection (`INVALID_WALLET`) and BigInt uint256 precision.
+- [x] Implement `BinanceRwaAssetResolver` (`src/binance/asset-resolver.ts`):
+  - Live registry-driven asset discovery by underlying ticker (`NVDA`) and platform discrimination (`bStocks` -> `NVDAB`, `Ondo` -> `NVDAon`).
+  - Stale contract `0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495` invalidated and rejected.
+- [x] Live Read-Only Smoke Test Pipeline (`scripts/smoke-test-readonly-integration.ts`):
+  - Verified live against Binance Web3 API and BSC Mainnet RPC: `USER_WALLET_PORTFOLIO_VERIFIED`.
+- [x] Implement Real Deterministic Portfolio Strategy Engine (`src/strategy/portfolio-engine.ts`):
+  - Produces 6 explicit states: `NO_ACTION`, `REBALANCE_REQUIRED`, `INSUFFICIENT_PORTFOLIO_DATA`, `MARKET_CLOSED`, `DATA_UNAVAILABLE`, `RISK_BLOCKED`.
+  - Zero mock preservation: Fails closed to `INSUFFICIENT_PORTFOLIO_DATA` on zero balances (never invents a 60/40 allocation).
+  - Evaluates live spread intelligence against `maxSpreadBps` (tripping `RISK_BLOCKED` when premium is excessive).
+- [x] 126/126 unit & integration tests passing across 7 vitest test suites.
 
 ### Phase 3: Independent Verification & Transaction Simulation
 - [ ] Implement `GenLayerVerificationAdapter` (`src/verification/genlayer-adapter.ts`).

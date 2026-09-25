@@ -31,6 +31,54 @@ export interface StrategyConfig {
   targetStableWeightBps: number; // e.g. 4000 bps = 40.0%
   driftThresholdBps: number;     // e.g. 500 bps = 5.0%
   maxSingleTradeUsd: number;
+  maxSpreadBps?: number;         // e.g. 200 bps = 2.0% max premium over reference price
+  allowClosedMarketRebalance?: boolean;
+}
+
+export const DEFAULT_MVP_STRATEGY_CONFIG: StrategyConfig = {
+  id: 'strat-nvda-usdc-60-40',
+  name: 'bStocks NVDAB / USDC 60-40 Core',
+  userPrompt: 'Keep 60% tokenized NVIDIA (NVDAB) and 40% USDC. Rebalance when stock allocation drifts more than 5%.',
+  stockSymbol: 'NVDAB',
+  stockAddress: '0x02fca66c1d1afb4e2a7884261eb00f63598a7436',
+  underlyingTicker: 'NVDA',
+  issuerPlatform: 'bStocks',
+  stableSymbol: 'USDC',
+  stableAddress: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d',
+  targetStockWeightBps: 6000, // 60.0%
+  targetStableWeightBps: 4000, // 40.0%
+  driftThresholdBps: 500,     // 5.0%
+  maxSingleTradeUsd: 5000,    // $5,000 circuit breaker
+  maxSpreadBps: 200,          // 2.0% max spread
+  allowClosedMarketRebalance: false
+};
+
+export type StrategyDecisionState =
+  | 'NO_ACTION'
+  | 'REBALANCE_REQUIRED'
+  | 'INSUFFICIENT_PORTFOLIO_DATA'
+  | 'MARKET_CLOSED'
+  | 'DATA_UNAVAILABLE'
+  | 'RISK_BLOCKED';
+
+export interface SpreadRiskAnalysis {
+  tokenPrice: number;
+  referencePrice: number | null;
+  spread: number | null;
+  spreadBps: number | null;
+  maxSpreadBps: number;
+  isExcessive: boolean;
+}
+
+export interface StrategyEvaluationResult {
+  state: StrategyDecisionState;
+  strategyId: string;
+  evaluatedAt: number;
+  snapshot: PortfolioSnapshot | null;
+  drift: DriftAnalysis | null;
+  spreadRisk: SpreadRiskAnalysis | null;
+  proposal: RebalanceProposal | null;
+  reason: string;
 }
 
 export interface PortfolioBalance {

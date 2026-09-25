@@ -270,7 +270,44 @@ Every real Binance integration attempt must record:
 - **Verification**:
   - `npm test`: **104/104 tests passing** across 6 test suites (100% pass rate).
   - `npm run build`: `tsc` compiles with 0 errors.
-  - Live smoke test (`npm run test:smoke`): All live endpoints succeeded and logged `INFRASTRUCTURE_VERIFIED`.
+  - Live smoke test (`npm run test:smoke`): All live endpoints succeeded and logged `INFRASTRUCTURE_VERIFIED` (and subsequently `USER_WALLET_PORTFOLIO_VERIFIED` when supplied non-zero target wallet `0xE422...7085`).
+
+---
+
+### Entry #013: Real Deterministic Portfolio Strategy Engine Implementation
+- **Date**: 2026-09-25
+- **Milestone**: Implementation of the Core Deterministic Portfolio Strategy Engine
+- **Context**:
+  - Following verified live telemetry (`USER_WALLET_PORTFOLIO_VERIFIED`, live Binance RWA prices, spreads, underlying market status, and wallet balances), implemented the pure deterministic strategy decision layer.
+  - Maintains strict Zero Mock Policy: zero fake balances, zero simulated valuations, zero arbitrary demo decisions.
+- **Architectural Implementation**:
+  1. `src/types/index.ts`:
+     - Added `StrategyDecisionState`: `'NO_ACTION' | 'REBALANCE_REQUIRED' | 'INSUFFICIENT_PORTFOLIO_DATA' | 'MARKET_CLOSED' | 'DATA_UNAVAILABLE' | 'RISK_BLOCKED'`.
+     - Added `SpreadRiskAnalysis` and `StrategyEvaluationResult`.
+     - Exported `DEFAULT_MVP_STRATEGY_CONFIG`: 60% NVDAB (`0x02fca66c1d1afb4e2a7884261eb00f63598a7436`), 40% USDC (`0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d`), 500 bps (5.0%) drift threshold, $5,000 circuit breaker, 200 bps (2.0%) max spread premium.
+  2. `src/strategy/portfolio-engine.ts`:
+     - Created `evaluatePortfolioStrategy(input: StrategyEvaluationInput): StrategyEvaluationResult` and `DeterministicPortfolioEngine` class.
+     - **Empty / Zero Wallet Guard**: When both asset balances are 0 tokens (or total valuation $\le 0$), returns `INSUFFICIENT_PORTFOLIO_DATA` with `snapshot: null` and `proposal: null`, preventing synthetic 60/40 allocation fabrication.
+     - **Spread Intelligence**: Integrates live on-chain vs. reference price spread. When stock is underweight and requires `BUY_STOCK`, if `spreadBps > maxSpreadBps`, triggers `RISK_BLOCKED` circuit breaker.
+     - **Fail-Closed Regimes**: Handles `REFERENCE_STALE` and invalid/mismatched balances via `DATA_UNAVAILABLE`; handles closed equity markets via `MARKET_CLOSED`.
+     - **Helpers**: Added `extractBalancesFromVerifiedList` to seamlessly bridge `VerifiedTokenBalance[]` from wallet client to strategy engine.
+  3. `tests/portfolio-engine.test.ts`:
+     - Added 22 comprehensive unit tests covering:
+       * Balanced portfolio (`NO_ACTION`)
+       * Overweight stock (`REBALANCE_REQUIRED` -> `SELL_STOCK`)
+       * Underweight stock (`REBALANCE_REQUIRED` -> `BUY_STOCK`)
+       * Threshold boundary (exact 500 bps triggers, 499 bps holds `NO_ACTION`)
+       * Zero/empty wallet (`INSUFFICIENT_PORTFOLIO_DATA`, zero mock preservation)
+       * Missing stock/stable prices (`DATA_UNAVAILABLE`)
+       * Stale quotes & oracle failure (`DATA_UNAVAILABLE`)
+       * Market closed rebalance pause (`MARKET_CLOSED`) and tighter slippage allowance
+       * Excessive token/reference spread (`RISK_BLOCKED`) vs acceptable spread pass
+       * Circuit breaker trade size limits ($5,000 USD cap)
+       * Integration helper & OO wrapper.
+- **Verification**:
+  - `npm test`: **126/126 tests passing** across 7 test suites (100% pass rate).
+  - `npm run build`: `tsc` compiles with 0 errors.
+
 
 
 

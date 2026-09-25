@@ -119,13 +119,27 @@ $$\text{spread} = \frac{\text{onchainPrice} - \text{referencePrice}}{\text{refer
 - **Zero-Mock Rendering**: Calculated and displayed **only** when both feeds are valid and live. If either is missing, stale, or unavailable, the UI and API explicitly return `—`.
 - **Strategy Condition Integration**: The deterministic risk engine evaluates user-defined spread constraints (e.g., *"Do not buy if tokenized price is > 2.0% above traditional reference"*), preventing toxic arbitrage or paying excessive illiquidity premiums.
 
-### 3.5 Deterministic Strategy & Risk Engine (`src/strategy/`)
-- Pure mathematical calculation of portfolio weights, drift basis points, and rebalance amounts.
-- Safety boundaries:
-  - Max trade size per rebalance.
-  - Max slippage tolerance (e.g. 50 bps in open session, 25 bps in closed/overnight session).
-  - Max spread premium threshold.
-  - Minimum drift activation threshold (e.g. 500 bps / 5.0%).
+### 3.5 Real Deterministic Strategy & Risk Engine (`src/strategy/portfolio-engine.ts` & `risk-engine.ts`)
+- Pure mathematical calculation of portfolio weights, drift basis points, and rebalance amounts based strictly on verified live data.
+- **Zero Mock Policy**:
+  - Never fabricates missing balance or price data.
+  - Returns `INSUFFICIENT_PORTFOLIO_DATA` when balances are genuinely zero or total portfolio valuation is zero (never invents a fake 60/40 allocation).
+  - Evaluates live on-chain vs. reference price spread and enforces risk boundaries.
+- **Six Explicit Decision States**:
+  1. `NO_ACTION`: Portfolio allocation drift is strictly within the tolerance threshold (default: 500 bps / 5.0%).
+  2. `REBALANCE_REQUIRED`: Allocation drift exceeds threshold and all verified risk checks pass. Proposes deterministic `BUY_STOCK` or `SELL_STOCK`.
+  3. `INSUFFICIENT_PORTFOLIO_DATA`: Both asset balances are zero or total portfolio valuation is $\le 0$. No fake portfolio weights generated.
+  4. `MARKET_CLOSED`: Underlying equity session is closed and strategy policy disallows closed-market rebalancing.
+  5. `DATA_UNAVAILABLE`: Missing, invalid, or stale price quotes or balance telemetry; or reference data stale (`REFERENCE_STALE`).
+  6. `RISK_BLOCKED`: Proposed rebalance blocked by risk boundaries (e.g., token/reference price spread exceeds `maxSpreadBps`).
+- **Configurable Safety Boundaries**:
+  - Max trade size per rebalance (`maxSingleTradeUsd`, e.g. $5,000 USD circuit breaker).
+  - Max slippage tolerance: 50 bps in open session, 25 bps in closed/overnight session.
+  - Max spread premium threshold (`maxSpreadBps`, default: 200 bps / 2.0%).
+  - Minimum drift activation threshold (`driftThresholdBps`, default: 500 bps / 5.0%).
+- **Standard MVP Configuration (`DEFAULT_MVP_STRATEGY_CONFIG`)**:
+  - Target: 60% NVDAB (`0x02fca66c1d1afb4e2a7884261eb00f63598a7436`) / 40% USDC (`0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d`).
+  - Drift threshold: 500 bps (5.0%). Circuit breaker: $5,000 USD. Max spread: 200 bps (2.0%). Fail-closed when market closed.
 
 ### 3.6 Independent Verification Layer (GenLayer)
 - Evaluates proposed rebalances as an external validator.
