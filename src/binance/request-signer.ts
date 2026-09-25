@@ -279,8 +279,8 @@ export class BinanceRequestSigner {
  * Factory helper to instantiate BinanceRequestSigner from environment or explicit config.
  */
 export function createBinanceRequestSigner(config?: Partial<BinanceSignerConfig>): BinanceRequestSigner {
-  const apiKey = config?.apiKey ?? process.env.BINANCE_WEB3_API_KEY;
-  const apiSecret = config?.apiSecret ?? process.env.BINANCE_WEB3_API_SECRET;
+  const apiKey = config?.apiKey ?? (process.env.BINANCE_WEB3_API_KEY || process.env.BINANCE_API_KEY);
+  const apiSecret = config?.apiSecret ?? (process.env.BINANCE_WEB3_API_SECRET || process.env.BINANCE_API_SECRET);
 
   if (!apiKey || !apiSecret) {
     throw new Error(
