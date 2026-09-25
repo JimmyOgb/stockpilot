@@ -213,6 +213,29 @@ Every real Binance integration attempt must record:
   - TypeScript compilation completely clean (0 errors).
   - Test assertions explicitly verify exact URL construction and pre-hash signed parameters.
 
+---
+
+### Entry #011: BinanceWalletBalanceClient Implementation & Dual-Source Verification
+- **Date**: 2026-09-25
+- **Milestone**: Read-Only Wallet Balance & Independent BSC Mainnet ERC-20 Cross-Verification
+- **Context**:
+  - Before considering quotes or trade execution, StockPilot must determine real wallet balances for `bNVDA` and `USDC` on BSC Mainnet (Chain ID: 56).
+  - Strict adherence to the Zero-Mock policy requires eliminating fabricated or simulated balances, while providing dual-source reconciliation between Binance Web3 API and independent direct BSC JSON-RPC (`eth_call` -> `balanceOf(address)`).
+- **Implementation**:
+  1. `src/binance/wallet-balance-client.ts`:
+     - **Binance Web3 Wallet API**: `POST /build/api/v1/dex/balance/token-balances-by-address` with HMAC-SHA256 signature headers generated via `BinanceRequestSigner`.
+     - **Direct BSC JSON-RPC Verification**: Encodes ERC-20 `balanceOf(address)` ABI calldata (`0x70a08231` + 32-byte left-padded EVM address word) and queries the BSC node directly.
+     - **Reconciliation Engine**: Pair-wise compares Binance raw integer balance against RPC hex result using `BigInt` uint256 precision.
+     - **Verification Lifecycle**: `VERIFIED`, `MISMATCH`, `BINANCE_UNAVAILABLE`, `RPC_UNAVAILABLE`, `BOTH_UNAVAILABLE`, `INVALID_WALLET`, `INVALID_RESPONSE`.
+     - **Credential Hygiene**: Class includes `toJSON()` preventing secret leakage upon serialization; strict fail-closed validation on invalid EVM addresses without issuing network requests.
+  2. `tests/binance-wallet-balance-client.test.ts`:
+     - 20 hermetic unit tests with mock fetch transports.
+     - Validates address validation, calldata generation, matching balances, mismatch detection, individual source outages, multi-token mixed statuses, case insensitivity, large uint256 balances (100M tokens), and credential isolation.
+- **Verification**:
+  - `npm test`: 92/92 tests passing across 5 test suites (100% pass rate).
+  - `npm run build`: `tsc` compiles with 0 errors.
+
+
 
 
 

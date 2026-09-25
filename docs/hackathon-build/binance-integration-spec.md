@@ -166,19 +166,64 @@ The RWA Data API is the primary authority for tokenized equity information on BS
 
 ---
 
-### Priority 3: Wallet API & Direct BSC RPC (Real Balances)
+### Priority 3: Wallet API & Direct BSC RPC (Dual-Source Verified Balances)
 
-* **Primary Endpoint**: `POST /api/v1/dex/balance/token-balances-by-address`
+* **Official Endpoint**: `POST /api/v1/dex/balance/token-balances-by-address`
+* **Gateway Path**: `/build/api/v1/dex/balance/token-balances-by-address`
+* **Authentication**: Signed (`X-OC-APIKEY`, `X-OC-TIMESTAMP`, `X-OC-SIGN`, `Content-Type: application/json`)
 * **Request Schema**:
   ```json
   {
-    "address": "0xUserWalletAddress...",
-    "chainId": "56",
+    "address": "0x1234567890123456789012345678901234567890",
+    "tokenContractAddresses": [
+      { "binanceChainId": "56", "tokenContractAddress": "0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495" },
+      { "binanceChainId": "56", "tokenContractAddress": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d" }
+    ],
     "excludeRiskToken": "0"
   }
   ```
-* **Redundant Fallback**: Direct BSC RPC `eth_call` invoking standard ERC-20 `balanceOf(address)` for `bNVDA` and `USDC`.
-* **Zero-Mock Requirement**: No fabricated balances. Displays `"No wallet connected"` or `"—"` if unconfigured.
+* **Response Schema**:
+  ```json
+  {
+    "code": 0,
+    "msg": "success",
+    "data": [
+      {
+        "binanceChainId": "56",
+        "tokenAssets": [
+          {
+            "binanceChainId": "56",
+            "tokenContractAddress": "0xA34C5e0AbE843E10461E2C9586Ea03E55Dbcc495",
+            "rawBalance": "25500000000000000000",
+            "balance": "25.5",
+            "decimals": 18
+          },
+          {
+            "binanceChainId": "56",
+            "tokenContractAddress": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+            "rawBalance": "1000000000000000000000",
+            "balance": "1000",
+            "decimals": 18
+          }
+        ]
+      }
+    ],
+    "success": true
+  }
+  ```
+* **Independent Verification**: Direct BSC JSON-RPC `eth_call` invoking standard ERC-20 `balanceOf(address)`:
+  * Selector: `0x70a08231` (keccak256("balanceOf(address)")[0..4])
+  * Parameter: Left-padded 32-byte address (24 hex zeros + 40 hex chars = 64 hex characters)
+  * Calldata format: `0x70a08231000000000000000000000000{address_without_0x}` (36 bytes / 74 characters)
+* **Reconciliation Rules & Zero-Mock Verification**:
+  * Precision: Exact integer comparison via `BigInt` uint256 (`binanceRawBalance === rpcRawBalance`). No floating-point rounding errors.
+  * Status is marked `VERIFIED` and `verifiedRawBalance` is populated **if and only if** both sources return identical raw balances.
+  * If Binance and RPC return differing amounts: `MISMATCH` with detailed `discrepancyReason`. `verifiedRawBalance` is kept `null`.
+  * If Binance API fails/unreachable: `BINANCE_UNAVAILABLE` (fallback to RPC balance available for audit, but not verified).
+  * If BSC RPC fails/reverts: `RPC_UNAVAILABLE` (Binance balance reported, but unverified).
+  * If both fail: `BOTH_UNAVAILABLE`.
+  * If invalid wallet address provided: `INVALID_WALLET` (fails closed immediately without network egress).
+* **Status**: Implemented in [`src/binance/wallet-balance-client.ts`](file:///C:/Users/NO%20GO%20NO/StockPilot/src/binance/wallet-balance-client.ts) and verified via 20 unit tests in [`tests/binance-wallet-balance-client.test.ts`](file:///C:/Users/NO%20GO%20NO/StockPilot/tests/binance-wallet-balance-client.test.ts).
 
 ---
 
