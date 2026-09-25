@@ -75,8 +75,21 @@ flowchart LR
   - Evaluates live spread intelligence against `maxSpreadBps` (tripping `RISK_BLOCKED` when premium is excessive).
 - [x] 126/126 unit & integration tests passing across 7 vitest test suites.
 
-### Phase 3: Independent Verification & Transaction Simulation
-- [ ] Implement `GenLayerVerificationAdapter` (`src/verification/genlayer-adapter.ts`).
+### Phase 3: Independent Verification (COMPLETED) & Transaction Simulation (NEXT)
+- [x] Implement GenLayer Intelligent Contract (`contracts/rebalance_verifier.py`):
+  - Pinned runner: `# { "Depends": "py-genlayer:5jycge4q8k23462jtb0b9fyey1s9qz928sz2nbrd9mg4sxqg2qng" }`.
+  - Independent mathematical verification of weights, drift, trade directions, bounds, spread limits, zero balances, and quote staleness.
+  - LLM structured risk evaluation (agentic verification) with custom validator comparator (no `strict_eq` on LLM text output).
+  - Validated with `genvm-lint check` (0 errors, 0 warnings).
+- [x] Implement `GenLayerVerificationAdapter` (`src/verification/genlayer-adapter.ts`):
+  - Deterministic canonical payload generation (`buildCanonicalEvidencePayload`) & SHA-256 evidence hashing.
+  - Strict local pre-verification gate + GenLayer RPC contract caller with custom comparator.
+  - 100% fail-closed on RPC errors, timeouts, malformed responses, consensus disagreement, or unconfigured contracts.
+  - Immutable audit trail recording (`getAuditTrail()`).
+  - Completely detached from trade execution, private keys, and wallet signing.
+- [x] Comprehensive Unit Tests (`tests/genlayer-adapter.test.ts`):
+  - 19 dedicated tests covering BUY, SELL, NO_ACTION, math mismatches, wrong directions, excessive spread, market closed, circuit breakers, stale quotes, zero balances, malformed responses, consensus timeouts, and tampered hashes.
+  - 145/145 tests passing across 8 vitest suites.
 - [ ] Implement `BinanceSimulationClient` (`src/binance/simulation-client.ts`):
   - `POST /api/v1/transaction/simulate`
   - Revert and gas exhaustion gate.

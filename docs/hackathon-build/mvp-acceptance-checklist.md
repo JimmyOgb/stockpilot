@@ -46,11 +46,13 @@
   - [x] Real token-vs-reference price spread risk check (`RISK_BLOCKED` when spread exceeds `maxSpreadBps`).
   - [x] 6 typed decision states: `NO_ACTION`, `REBALANCE_REQUIRED`, `INSUFFICIENT_PORTFOLIO_DATA`, `MARKET_CLOSED`, `DATA_UNAVAILABLE`, `RISK_BLOCKED`.
 
-- [ ] **8. Verification Gate (GenLayer Adapter)**
-  - [x] Verification adapter maintained as independent verification boundary.
-  - [x] Cryptographic evidence packet structured (drift, bounds, freshness, market state).
-  - [x] Execution blocked unless verification returns `ALLOW`.
-  - [x] Zero mock policy: No fabricated verification consensus responses.
+- [x] **8. Verification Gate (GenLayer Adapter)**
+  - [x] Verification adapter maintained as independent verification boundary (`src/verification/genlayer-adapter.ts`).
+  - [x] GenLayer Intelligent Contract (`contracts/rebalance_verifier.py`) pinned to latest runner with custom comparator (no `strict_eq` on LLM).
+  - [x] Canonical evidence packet structured (`CanonicalEvidencePayload` with sorted-key deterministic SHA-256 hash).
+  - [x] Execution blocked unless verification returns `ALLOW` (`VERIFIED`).
+  - [x] Zero mock policy: No fabricated verification consensus responses in production runtime.
+  - [x] 19 dedicated unit tests in `tests/genlayer-adapter.test.ts` covering BUY, SELL, NO_ACTION, math mismatches, wrong directions, excessive spread, market closed, circuit breakers, stale quotes, zero balances, malformed responses, consensus timeouts, and tampered hashes.
 
 - [x] **9. Binance Web3 API Integration (Read-Only Telemetry & Verification)**
   - [x] Official API documentation audited (`https://web3.binance.com/build`).

@@ -308,6 +308,64 @@ Every real Binance integration attempt must record:
   - `npm test`: **126/126 tests passing** across 7 test suites (100% pass rate).
   - `npm run build`: `tsc` compiles with 0 errors.
 
+---
+
+### Entry #014: Independent GenLayer Verification Adapter Implementation
+- **Date**: 2026-09-25
+- **Milestone**: Implementation of the Independent GenLayer Verification Layer
+- **Context**:
+  - Following the completion of the deterministic portfolio strategy engine, implemented an independent GenLayer verification boundary.
+  - **Strict Architecture Invariant**: GenLayer is strictly an independent verification gate. It NEVER executes trades, signs transactions, holds private keys, fabricates market data, or replaces the deterministic engine.
+- **Architectural Implementation**:
+  1. `contracts/rebalance_verifier.py`:
+     - Pinned runner: `# { "Depends": "py-genlayer:5jycge4q8k23462jtb0b9fyey1s9qz928sz2nbrd9mg4sxqg2qng" }`.
+     - Validated using `genvm-lint check` (0 errors, 0 warnings).
+     - Implements `verify_proposal(payload_json: str) -> dict` performing independent verification of:
+       * Empty/zero portfolio rejection (zero balances $\rightarrow$ `REJECT`)
+       * Mathematical reconciliation of valuations and basis point weights
+       * Drift calculation consistency ($|\text{Weight} - \text{Target}|$)
+       * Direction consistency (`BUY_STOCK` vs `SELL_STOCK` vs `NONE`)
+       * Spread risk boundaries (`maxSpreadBps`)
+       * Circuit breaker enforcement (`maxSingleTradeUsd`)
+       * Market session permission (`MARKET_OPEN`)
+       * Quote freshness ($< 900\text{s}$)
+     - Features structured LLM risk evaluation without `strict_eq` on non-deterministic text outputs, using custom validator consensus on `status` and `evidence_hash`.
+     - Deployed transaction tested on StudioNet: identified `NO_MAJORITY` consensus state on network, confirming the critical importance of StockPilot's fail-closed verification architecture.
+  2. `src/types/index.ts`:
+     - Added `GenLayerVerificationInput`, `CanonicalEvidencePayload`, `GenLayerRuleChecks`, `GenLayerContractResponse`, `GenLayerVerificationAuditRecord`, and updated `VerificationResult`.
+  3. `src/verification/genlayer-adapter.ts`:
+     - Created `buildCanonicalEvidencePayload`: normalizes inputs into deterministic payload.
+     - Created `computeEvidenceHash`: deterministic SHA-256 hash using alphabetically sorted keys.
+     - Created `validateEvidencePayload`: local pre-verification validation of risk invariants.
+     - Created `GenLayerVerificationAdapter`:
+       * 100% fail-closed on RPC errors, timeouts, malformed responses, consensus disagreement, or unconfigured contracts.
+       * Custom structured comparator verifying schema, rule flags, and evidence hash match.
+       * Immutable audit logging with zero secrets or private keys exposed (`getAuditTrail()`).
+  4. `tests/genlayer-adapter.test.ts`:
+     - Added 19 dedicated unit tests covering:
+       * Valid BUY proposal $\rightarrow$ `VERIFIED`
+       * Valid SELL proposal $\rightarrow$ `VERIFIED`
+       * `NO_ACTION` $\rightarrow$ `VERIFIED`
+       * Math and weight mismatches $\rightarrow$ `NOT_VERIFIED` (`REJECT`)
+       * Incorrect trade directions $\rightarrow$ `NOT_VERIFIED` (`REJECT`)
+       * Excessive spread $\rightarrow$ `NOT_VERIFIED` (`REJECT`)
+       * Market closed $\rightarrow$ `NOT_VERIFIED` (`REJECT`)
+       * Circuit breaker exceeded $\rightarrow$ `NOT_VERIFIED` (`REJECT`)
+       * Stale quotes & oracle failure $\rightarrow$ `NOT_VERIFIED` (`REJECT`)
+       * Malformed responses $\rightarrow$ `NOT_VERIFIED` (`REJECT`)
+       * Consensus timeouts and `NO_MAJORITY` $\rightarrow$ `NOT_VERIFIED` (`REJECT`)
+       * Zero-balance portfolio rejection $\rightarrow$ `NOT_VERIFIED` (`REJECT`)
+       * Tampered evidence hash detection $\rightarrow$ `NOT_VERIFIED` (`REJECT`)
+       * Network abort/timeout handling $\rightarrow$ `NOT_VERIFIED` (`REJECT`)
+       * Unconfigured contract address $\rightarrow$ `NOT_VERIFIED` (`REJECT`)
+       * Validator disagreement $\rightarrow$ `NOT_VERIFIED` (`REJECT`)
+       * Audit record persistence and credential protection.
+- **Verification**:
+  - `npm test`: **145/145 tests passing** across 8 test suites (100% pass rate).
+  - `npm run build`: `tsc` compiles with 0 errors.
+  - `genvm-lint check contracts/rebalance_verifier.py --json`: `ok: true`, 0 errors, 0 warnings.
+
+
 
 
 

@@ -141,15 +141,32 @@ $$\text{spread} = \frac{\text{onchainPrice} - \text{referencePrice}}{\text{refer
   - Target: 60% NVDAB (`0x02fca66c1d1afb4e2a7884261eb00f63598a7436`) / 40% USDC (`0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d`).
   - Drift threshold: 500 bps (5.0%). Circuit breaker: $5,000 USD. Max spread: 200 bps (2.0%). Fail-closed when market closed.
 
-### 3.6 Independent Verification Layer (GenLayer)
-- Evaluates proposed rebalances as an external validator.
-- Receives cryptographic evidence packet:
-  - Proposed rebalance direction and volume.
-  - Current portfolio valuation and computed drift.
-  - Current RWA market status and reference price spread.
-  - Quote timestamp and freshness guarantee.
-- **Strict Boundary**: GenLayer **never executes trades**. It issues a verifiable consensus decision (`ALLOW`, `REJECT`, `HALT`).
-- **Fail-Closed**: If GenLayer rejects the packet, encounters an error, or is unconfigured, execution immediately halts.
+### 3.6 Independent Verification Layer (GenLayer — `contracts/rebalance_verifier.py` & `src/verification/genlayer-adapter.ts`)
+- Evaluates proposed rebalances as an external, independent validator consensus gate.
+- **Strict Boundary**: GenLayer **never executes trades, holds private keys, signs transactions, or submits orders**.
+- **Canonical Evidence Payload (`CanonicalEvidencePayload`)**:
+  - Deterministic serialization with alphabetically sorted keys and SHA-256 evidence hashing.
+  - Contains strategy configuration, verified wallet balance evidence, live NVDAB token and reference prices, deterministic spread, market session status, snapshot weights, proposal delta, and risk checks.
+- **Independent Verification Invariants**:
+  1. Proposal mathematically matches supplied portfolio balance valuations.
+  2. Drift calculation is independently reconciled ($|\text{Weight} - \text{Target}|$).
+  3. Proposed trade direction is consistent with drift (`BUY_STOCK` when underweight, `SELL_STOCK` when overweight, `NONE` when within threshold).
+  4. Trade amount does not exceed circuit breaker (`maxSingleTradeUsd`).
+  5. Market session permits proposed action (blocks trades when `MARKET_CLOSED` or `REFERENCE_STALE`).
+  6. Real token/reference spread does not violate configured risk boundary (`maxSpreadBps` on `BUY_STOCK`).
+  7. Zero/empty portfolio balances (`0 tokens`) are **never converted into synthetic weights** (strictly rejected).
+  8. Stale quotes ($> 900\text{s}$) or tampered evidence hashes are unconditionally rejected.
+- **Fail-Closed Consensus Protocol**:
+  - Unavailable GenLayer result $\rightarrow$ `NOT_VERIFIED` (`REJECT`).
+  - RPC timeout / network error $\rightarrow$ `NOT_VERIFIED` (`REJECT`).
+  - Malformed schema $\rightarrow$ `NOT_VERIFIED` (`REJECT`).
+  - Validator disagreement / `NO_MAJORITY` $\rightarrow$ `NOT_VERIFIED` (`REJECT`).
+  - Unconfigured contract address $\rightarrow$ `NOT_VERIFIED` (`REJECT`).
+  - Only an explicitly valid proposal with unanimous consensus receives `VERIFIED` (`ALLOW`).
+- **Defensive Structured Schema & Custom Comparator**:
+  - Does **not** use `strict_eq` on non-deterministic LLM text outputs. Uses structured JSON schema with field-level agreement on `status` (`ALLOW`/`REJECT`), `evidence_hash`, and rule flags.
+- **Immutable Audit Trail**:
+  - Persists `auditId`, `proposalId`, `strategyId`, `evidenceHash`, `canonicalPayload`, `status`, `decision`, `reason`, `verifiedAt` without exposing credentials or keys.
 
 ### 3.7 Transaction Simulation Service (Binance Web3 / Preflight)
 - **Hard Gate**: `PROPOSE → VERIFY → SIMULATE → EXECUTE`.

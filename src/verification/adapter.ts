@@ -4,11 +4,15 @@
  * NEVER executes trades.
  */
 
-import { VerificationEvidence, VerificationResult } from '../types/index.js';
+import {
+  VerificationEvidence,
+  GenLayerVerificationInput,
+  VerificationResult
+} from '../types/index.js';
 
 export interface IVerificationAdapter {
   /**
    * Submits evidence packet to verification layer and awaits consensus / rule evaluation.
    */
-  verifyProposal(evidence: VerificationEvidence): Promise<VerificationResult>;
+  verifyProposal(evidence: VerificationEvidence | GenLayerVerificationInput): Promise<VerificationResult>;
 }

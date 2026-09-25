@@ -136,13 +136,131 @@ export interface VerificationEvidence {
   timestamp: number;
 }
 
+export interface GenLayerVerificationInput {
+  strategy: StrategyConfig;
+  balances: {
+    stock: {
+      symbol: string;
+      contractAddress: string;
+      rawAmount: string;
+      formattedAmount: number;
+      verificationStatus: string;
+    };
+    stable: {
+      symbol: string;
+      contractAddress: string;
+      rawAmount: string;
+      formattedAmount: number;
+      verificationStatus: string;
+    };
+  };
+  marketData: {
+    stockTokenPrice: number;
+    stockReferencePrice: number | null;
+    spread: number | null;
+    spreadBps: number | null;
+    quoteTimestamp: number;
+    quoteAgeSeconds: number;
+  };
+  marketStatus: {
+    state: MarketState;
+    rawStatus?: string;
+    openState?: boolean;
+    updatedAt?: number;
+  };
+  snapshot: PortfolioSnapshot | null;
+  proposal: RebalanceProposal;
+  riskChecks: {
+    maxSpreadBps: number;
+    maxSingleTradeUsd: number;
+    isSpreadExcessive: boolean;
+    isCircuitBreakerTripped: boolean;
+  };
+  timestamp: number;
+  proposalId?: string;
+}
+
+export interface CanonicalEvidencePayload {
+  version: '1.0.0';
+  proposalId: string;
+  strategyId: string;
+  targetStockWeightBps: number;
+  targetStableWeightBps: number;
+  driftThresholdBps: number;
+  maxSingleTradeUsd: number;
+  maxSpreadBps: number;
+  stockSymbol: string;
+  stockContractAddress: string;
+  stableSymbol: string;
+  stableContractAddress: string;
+  stockBalanceRaw: string;
+  stockBalanceFormatted: number;
+  stableBalanceRaw: string;
+  stableBalanceFormatted: number;
+  stockTokenPrice: number;
+  stockReferencePrice: number | null;
+  spread: number | null;
+  spreadBps: number | null;
+  marketState: MarketState;
+  quoteTimestamp: number;
+  quoteAgeSeconds: number;
+  currentStockWeightBps: number;
+  currentStableWeightBps: number;
+  totalValueUsd: number;
+  calculatedDriftBps: number;
+  proposedAction: RebalanceAction;
+  proposedTradeAmountUsd: number;
+  proposedApproxTokenAmount: number;
+  proposedSlippageLimitBps: number;
+  sourceAsset: string;
+  targetAsset: string;
+  evidenceTimestamp: number;
+}
+
+export interface GenLayerRuleChecks {
+  payload_valid: boolean;
+  math_consistent: boolean;
+  direction_consistent: boolean;
+  spread_permitted: boolean;
+  circuit_breaker_passed: boolean;
+  market_state_permitted: boolean;
+  non_zero_portfolio: boolean;
+  freshness_passed?: boolean;
+}
+
+export interface GenLayerContractResponse {
+  status: 'ALLOW' | 'REJECT';
+  reason: string;
+  evidence_hash: string;
+  proposal_id: string;
+  checks: GenLayerRuleChecks;
+}
+
 export type VerificationStatus = 'ALLOW' | 'REJECT' | 'HALT';
+export type VerificationDecision = 'VERIFIED' | 'NOT_VERIFIED';
 
 export interface VerificationResult {
   status: VerificationStatus;
+  decision: VerificationDecision;
   evidenceHash: string;
   reason: string;
   verifiedAt: number;
+  proposalId?: string;
+  checks?: GenLayerRuleChecks;
+}
+
+export interface GenLayerVerificationAuditRecord {
+  auditId: string;
+  proposalId: string;
+  strategyId: string;
+  evidenceHash: string;
+  canonicalPayload: CanonicalEvidencePayload;
+  status: VerificationStatus;
+  decision: VerificationDecision;
+  reason: string;
+  verifiedAt: number;
+  contractAddress: string;
+  rpcUrl: string;
 }
 
 export type ExecutionState = 'PENDING' | 'EXECUTED' | 'FAILED' | 'BLOCKED_FAIL_CLOSED';
