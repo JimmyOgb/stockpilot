@@ -67,20 +67,33 @@
   - [x] Zero mock policy: Read-only simulation only. Zero broadcasting, zero orders, zero signing, zero funds moved.
   - [x] 25 dedicated unit tests in `tests/binance-simulation-client.test.ts`. All 170/170 unit tests passing.
 
-- [ ] **10. Spot Transaction Execution**
-  - [x] Execution adapter interface designed for both `SWAP` and `RFQ` flows.
-  - [x] Spot-only enforcement (rejection of leverage / perps).
-  - [ ] Live broadcast via Binance Web3 Wallet / Agentic Wallet.
+- [x] **10. Spot Transaction Execution (Binance Agentic Wallet)**
+  - [x] Execution adapter interface designed and implemented (`src/execution/agentic-execution-adapter.ts`).
+  - [x] Spot-only enforcement (strictly spot `market-order swap` on BSC; perps, leverage, derivatives rejected).
+  - [x] 14+ hard pre-execution validation gates verified (hashes, proposal ID, simulation OK, market open, quote fresh, spread within bound, circuit breaker).
+  - [x] Agentic Wallet policy checks (daily spending limit quota, token allowlist, tx-lock UNLOCKED).
+  - [x] Zero Live Balance Guard: fails closed with `EXECUTION_BLOCKED_INSUFFICIENT_LIVE_BALANCE` if wallet has 0 NVDAB and 0 USDC.
+  - [x] Explicit User Approval Boundary (`requireUserApproval: true`, interactive `UserApprovalRequest` prompt, deny $\rightarrow$ `EXECUTION_BLOCKED_USER_APPROVAL_DENIED`).
+  - [x] Live Tiny Execution Cap (`tinyExecutionCapUsd`, default $25.00) protecting early live tests.
+  - [x] Duplicate execution prevention via SHA-256 idempotency keys (`EXECUTION_BLOCKED_DUPLICATE_EXECUTION`).
+  - [x] Terminal status tracking (`FINISHED` / `FAILED`) and BSC Mainnet JSON-RPC on-chain receipt confirmation (`eth_getTransactionReceipt`).
+  - [x] Safe dry-run mode (`isDryRun: true`) cleanly isolated with test IDs.
+  - [x] Zero private keys stored or exposed; official Agentic Wallet manages signing.
 
-- [ ] **11. Execution & Audit History**
-  - [x] Immutable audit store interface.
-  - [x] Explicit states: `PENDING`, `VERIFIED`, `EXECUTED`, `FAILED`, `HALTED_STALE`.
+- [x] **11. Execution & Audit History**
+  - [x] Immutable audit store interface (`IAuditStore`, `InMemoryAuditStore`).
+  - [x] 7 explicit execution states: `EXECUTION_BLOCKED`, `APPROVAL_REQUIRED`, `EXECUTION_SUBMITTED`, `EXECUTION_PENDING`, `EXECUTION_CONFIRMED`, `EXECUTION_FAILED`, `EXECUTION_UNKNOWN`.
+  - [x] Full audit record persistence (proposal ID, strategy ID, verification hash, simulation hash, wallet address, token contract, direction, requested amount, actual executed amount, order ID, tx hash, timestamps, status, failure reason, idempotency key).
   - [x] DevEx log endpoint (`/api/devex-log`) exposing real integration records to UI.
 
-- [ ] **12. Clear Fail-Closed Behavior**
+- [x] **12. Clear Fail-Closed Behavior**
   - [x] Zero Mock Policy enforced: Missing data displays `"Not Connected"`, `"No live data available"`, `"Verification unavailable"`, or `"—"`.
-  - [x] Blocks trades on `REFERENCE_STALE`.
-  - [x] Blocks trades on verification failure or timeout.
+  - [x] Blocks trades on `REFERENCE_STALE` or `MARKET_CLOSED`.
+  - [x] Blocks trades on GenLayer verification failure or timeout.
+  - [x] Blocks trades on Binance simulation revert or failure.
+  - [x] Blocks trades on zero live balance (`EXECUTION_BLOCKED_INSUFFICIENT_LIVE_BALANCE`).
+  - [x] Blocks trades on unapproved or denied user authorization.
+  - [x] Ambiguous or lost network responses resolve to `EXECUTION_UNKNOWN` (never converted to success).
 
 ---
 
@@ -89,10 +102,10 @@
 - [x] Clean project directory and Git repository initialized.
 - [x] Comprehensive `README.md`.
 - [x] `docs/hackathon-build/scope.md` detailing constraints and MVP boundaries.
-- [x] `docs/hackathon-build/architecture.md` detailing decoupled architecture & RFQ flow.
-- [x] `docs/hackathon-build/build-notes.md` with verified API findings.
+- [x] `docs/hackathon-build/architecture.md` detailing decoupled architecture, execution gates, and Agentic Wallet setup.
+- [x] `docs/hackathon-build/build-notes.md` with verified API findings and completed Phase 4 milestone.
 - [x] `docs/hackathon-build/binance-integration-spec.md` with full endpoint specifications.
-- [x] `docs/hackathon-build/devex-log.md` with official integration entries.
-- [x] Unit tests for deterministic strategy, GenLayer verification, and Binance simulation passing (170/170 across 9 test suites).
+- [x] `docs/hackathon-build/devex-log.md` with official integration entries #001 through #009.
+- [x] Unit tests for deterministic strategy, GenLayer verification, Binance simulation, and Agentic Wallet execution passing (211/211 across 11 test suites).
 - [x] Working health/status endpoint (`/api/health`).
 - [x] Anime-inspired animated product introduction sequence and live Zero-Mock dashboard.

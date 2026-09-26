@@ -189,16 +189,70 @@ $$\text{spread} = \frac{\text{onchainPrice} - \text{referencePrice}}{\text{refer
 - **Cryptographic Audit Trail**:
   - Every simulation evaluation creates an immutable in-memory audit record with a deterministic SHA-256 simulation hash. Accessible via `getAuditTrail()`.
 
-### 3.8 Execution Authorization & Agentic Wallet Integration (`src/binance/`, `.agents/skills/`)
-StockPilot clearly delineates responsibilities between programmatic API calls and Agentic Wallet skills:
+### 3.8 Live Execution Boundary & Agentic Wallet Integration (`src/execution/`)
+StockPilot enforces the final execution boundary using the official Binance Agentic Wallet (`baw`):
 
-| Capability | Module Handling | Rationale |
-|---|---|---|
-| **RWA Metadata & Market Status** | `binance-tokenized-securities-info` Skill & RWA Data API | Authoritative access to tokenized equity parameters, trading halt codes, and sessions. |
-| **Telemetry & Drift Polling** | Binance Web3 REST API Client (`src/binance/`) | High-frequency programmatic background polling without human prompt friction. |
-| **Spending Limits & Policy** | Binance Agentic Wallet (`baw`) Policy Manager | Enforces user-configured daily allowances and contract whitelists. |
-| **RFQ Order Signing** | Binance Agentic Wallet (`baw sign-message`) | User or agent EIP-712 typed-data signing for zero-slippage RFQ execution. |
-| **Settlement & Receipts** | Binance Trading API & BSC Mainnet | Cryptographic transaction receipt and status polling. |
+$$\begin{aligned}
+\text{REAL TELEMETRY} &\longrightarrow \text{DETERMINISTIC STRATEGY} \\
+&\longrightarrow \text{GENLAYER VERIFIED} \\
+&\longrightarrow \text{BINANCE SIMULATION PASSED} \\
+&\longrightarrow \text{AGENTIC WALLET POLICY CHECK} \\
+&\longrightarrow \text{EXPLICIT USER APPROVAL} \\
+&\longrightarrow \text{TINY LIVE SPOT EXECUTION} \\
+&\longrightarrow \text{ORDER / TRANSACTION STATUS} \\
+&\longrightarrow \text{BSC RECEIPT CONFIRMATION} \\
+&\longrightarrow \text{AUDIT LOG}
+\end{aligned}$$
+
+#### 3.8.1 Pre-Execution Hard Gates (14+ Verification Requirements)
+The execution adapter accepts ONLY proposals meeting all of the following sequential requirements:
+1. `strategy decision == REBALANCE_REQUIRED` (non-zero drift exceeding threshold).
+2. `GenLayer decision == VERIFIED` and `status == ALLOW`.
+3. Canonical evidence SHA-256 hash matches recomputed evidence hash.
+4. Proposal ID matches across canonical payload and verification result.
+5. Binance simulation decision == `SIMULATED_OK` and status == `SUCCESS`.
+6. Simulation hash matches current proposal ID and evidence hash.
+7. Market is open (`canonicalPayload.marketState === 'MARKET_OPEN'`).
+8. Quote is fresh (`canonicalPayload.quoteAgeSeconds <= maxAllowedQuoteAgeSeconds`, default 900s).
+9. Spread is within configured limit (`spreadBps <= maxSpreadBps`, default 200 bps).
+10. Trade amount is positive and within the $5,000 circuit breaker.
+11. Trade amount is within the configured tiny live execution cap (`tinyExecutionCapUsd`, default $25.00).
+12. Wallet address is valid and non-zero EVM address.
+13. Required asset addresses are dynamically resolved and valid EVM contracts.
+14. No stale telemetry or unresolved verification state.
+
+#### 3.8.2 Agentic Wallet Policy & Zero-Balance Controls
+- **Zero Balance Guard**: If the user's wallet has 0 NVDAB and 0 USDC, execution is immediately aborted with `EXECUTION_BLOCKED_INSUFFICIENT_LIVE_BALANCE`. Zero mock invariant: never fabricates funds.
+- **Direction Balance Check**: For `BUY_STOCK`, wallet must have sufficient USDC; for `SELL_STOCK`, wallet must have sufficient NVDAB.
+- **Status & Tx-Lock**: Requires `wallet status == CONNECTED` and `wallet tx-lock == UNLOCKED`. Fails closed if locked due to pending on-chain transactions or app double-confirmation.
+- **Spending Limit Quota**: Checks `wallet settings`: `quotaLeft >= proposedTradeAmountUsd`. Fails closed if daily limit is exceeded.
+- **Token Allowlist**: Checks `tradeAllTokens` and explicit token allowlists.
+
+#### 3.8.3 Explicit User Approval Boundary
+- The first live execution milestone strictly enforces user-controlled authorization (`requireUserApproval = true`).
+- No autonomous trade can execute merely because an AI or GenLayer verification result indicates `ALLOW`.
+- An interactive `UserApprovalRequest` is presented with complete execution parameters (assets, amounts, price, slippage, estimated fee, idempotency key).
+- Missing approval returns `APPROVAL_REQUIRED`. Denied approval transitions to `EXECUTION_BLOCKED` (`EXECUTION_BLOCKED_USER_APPROVAL_DENIED`).
+
+#### 3.8.4 Duplicate Execution Protection (Idempotency)
+- Derives a deterministic cryptographic SHA-256 idempotency key:
+  $$\text{idempotencyKey} = \text{SHA-256}(\text{proposalId} \parallel \text{evidenceHash} \parallel \text{simulationHash} \parallel \text{walletAddress})$$
+- Retried proposals with identical keys are rejected with `EXECUTION_BLOCKED_DUPLICATE_EXECUTION`, preventing duplicate trades.
+
+#### 3.8.5 Terminal Status & BSC On-Chain Receipt Confirmation
+- Dispatches spot-only swap via `baw market-order swap --fromTokenQty ... --fromToken ... --toToken ... --binanceChainId 56 --json`.
+- State transitions to `EXECUTION_PENDING` with returned `orderId`.
+- Polls `baw market-order list --orderId <id> --json` to terminal status (`FINISHED` or `FAILED`).
+- On `FINISHED`, queries BSC Mainnet JSON-RPC (`eth_getTransactionReceipt(txHash)`).
+- Validates on-chain status:
+  - `0x1` $\rightarrow$ `EXECUTION_CONFIRMED`.
+  - `0x0` (reverted on-chain) $\rightarrow$ `EXECUTION_FAILED`.
+  - Ambiguous / lost network responses $\rightarrow$ `EXECUTION_UNKNOWN` (never converts uncertainty into success).
+
+#### 3.8.6 Immutable Audit Logging
+Every execution cycle creates an immutable audit record containing:
+`auditId`, `proposalId`, `strategyId`, `verificationHash`, `simulationHash`, `walletAddress`, `tokenContract`, `direction`, `requestedAmount`, `actualExecutedAmount`, `executionOrderId`, `txHash`, `submissionTimestamp`, `confirmationTimestamp`, `finalExecutionStatus`, `failureReason`, `idempotencyKey`, `isDryRun`.
+Zero private keys, secrets, or mnemonic material are ever stored or logged.
 
 ### 3.9 BNB Agent Studio Integration
 - StockPilot operates as an autonomous agent registered with **BNB Agent Studio**.
@@ -206,13 +260,74 @@ StockPilot clearly delineates responsibilities between programmatic API calls an
 
 ---
 
-## 4. Architectural Summary
+## 4. Exact User Setup Required for Binance Agentic Wallet
+
+To execute user-approved spot rebalances via StockPilot, the user's environment must be configured as follows:
+
+### 4.1 CLI Installation & Authentication
+1. Install the official Binance Agentic Wallet CLI:
+   ```bash
+   npm install -g @binance/agentic-wallet
+   ```
+2. Authenticate the wallet session:
+   ```bash
+   baw auth signin
+   baw auth verify --code <YOUR_CODE>
+   ```
+3. Verify wallet connection status:
+   ```bash
+   baw wallet status --json
+   # Must return: { "success": true, "data": { "status": "CONNECTED" } }
+   ```
+4. Verify wallet addresses on BSC Mainnet (Chain ID `56`):
+   ```bash
+   baw wallet address --json
+   ```
+
+### 4.2 Spending Allowance & Daily Quota
+1. View current security limits:
+   ```bash
+   baw wallet settings --json
+   ```
+2. Configure daily spending limits in the **Binance App**:
+   - Open Binance App $\rightarrow$ Web3 $\rightarrow$ Agentic Wallet $\rightarrow$ Settings.
+   - Set **Daily Transaction Limit** (e.g., $100 – $5,000 USD).
+   - Ensure remaining quota (`quotaLeft`) exceeds the proposed rebalance trade amount.
+
+### 4.3 Token Allowlist
+1. In the Binance App Agentic Wallet settings:
+   - Either enable **Trade All Tokens** (`tradeAllTokens: true`), or
+   - Add the target token contracts to the allowed tokens list:
+     * **bStocks NVIDIA (`NVDAB`)**: `0x02fca66c1d1afb4e2a7884261eb00f63598a7436`
+     * **Binance-Peg USDC (`USDC`)**: `0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d`
+
+### 4.4 Token Approvals & Transaction Lock
+1. Verify active token approvals:
+   ```bash
+   baw approvals list --binanceChainId 56 --json
+   ```
+2. Verify wallet transaction lock state:
+   ```bash
+   baw wallet tx-lock --binanceChainId 56 --json
+   # Must return: { "success": true, "data": { "status": "UNLOCKED" } }
+   ```
+   If `LOCKED`, complete any pending approvals or double-confirmations in the Binance App.
+
+### 4.5 User Approval Step
+- When StockPilot identifies a rebalancing opportunity that passes GenLayer verification and Binance simulation, it presents the `UserApprovalRequest`.
+- The user reviews the trade parameters and explicitly submits confirmation (`approved: true`).
+- Live execution switch (`allowLiveExecution`) must be intentionally enabled by the operator. By default, it remains fail-closed to prevent accidental live execution.
+
+---
+
+## 5. Architectural Summary
 
 | Layer | Responsibility | Does NOT Do |
 |---|---|---|
-| **Strategy UI** | User plain-English strategy input, zero-mock telemetry, anime narrative | Fake prices or simulated execution |
+| **Strategy UI** | User plain-English strategy input, zero-mock telemetry, approval prompt | Fake prices or simulated execution |
 | **StockPilot Engine** | Deterministic drift, spread intelligence, proposal construction | Claim consensus or execute without verification |
 | **GenLayer Gate** | Independent cryptographic verification of proposal rules | Execute trades or hold private keys |
 | **Binance Simulation** | Preflight on-chain revert and gas verification | Authorize execution on failed simulations |
-| **Agentic Wallet** | Policy boundary enforcement, EIP-712 signing, spot execution | Decide whether a strategy is mathematically valid |
-| **BSC Mainnet** | Final decentralized spot settlement of bNVDA and USDC | N/A |
+| **Agentic Wallet** | Policy boundary enforcement, spending limits, spot execution | Decide whether a strategy is mathematically valid |
+| **BSC Mainnet** | Final decentralized spot settlement of NVDAB and USDC | N/A |
+

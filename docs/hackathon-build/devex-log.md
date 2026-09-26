@@ -442,6 +442,43 @@ Every real Binance integration attempt must record:
   - **`SIMULATION_BLOCKED_INSUFFICIENT_LIVE_PORTFOLIO`**
   - Confirmed 0 transactions broadcast, 0 orders submitted, 0 private keys required, 0 funds moved.
 
+---
+
+### [2026-09-25 18:20:00 UTC] - Entry 009: Official Binance Agentic Wallet Live Execution Boundary & Policy Gate Integration
+
+- **Objective**: Design and implement the final execution boundary for StockPilot using the official Binance Agentic Wallet (`@binance/agentic-wallet` / `baw`) and wallet skills, ensuring strict fail-closed safety, spot-only enforcement, explicit user approval, tiny transaction limits, idempotency, on-chain receipt confirmation, and zero private-key exposure.
+- **Components & Files Created/Updated**:
+  - `src/types/index.ts`: Extended with 7 explicit execution states (`EXECUTION_BLOCKED`, `APPROVAL_REQUIRED`, `EXECUTION_SUBMITTED`, `EXECUTION_PENDING`, `EXECUTION_CONFIRMED`, `EXECUTION_FAILED`, `EXECUTION_UNKNOWN`), `ExecutionBlockReason`, `BscTransactionReceipt`, `ExecutionAuditRecord`, `AgenticWalletSettings`, `AgenticWalletStatus`, `AgenticWalletTxLock`, `AgenticWalletBalanceItem`, `AgenticMarketOrderDetail`, `UserApprovalRequest`, and `UserApprovalDecision`.
+  - `src/execution/binance-agentic-wallet-client.ts`: Typed programmatic client driving `baw` CLI commands with `--json` output parsing and BSC JSON-RPC `eth_getTransactionReceipt` queries.
+  - `src/execution/agentic-execution-adapter.ts`: Full execution adapter enforcing 14+ hard gates, Agentic Wallet policy checks, zero-balance guards, user approval boundary, duplicate execution protection, safe dry-run mode, and immutable audit trails.
+  - `src/execution/adapter.ts`: Re-exporting execution interfaces and implementations.
+  - `src/storage/audit-log.ts`: Enhanced `IAuditStore` and `InMemoryAuditStore` with execution audit methods.
+  - `tests/agentic-execution-adapter.test.ts`: 30 comprehensive unit tests covering all required failure/success modes.
+  - `tests/binance-agentic-wallet-client.test.ts`: 11 unit tests covering CLI argument construction and RPC receipt confirmation.
+- **Agentic Wallet Capabilities Utilized**:
+  1. `baw wallet status --json`: Verifies wallet is `CONNECTED` before allowing any trade evaluation.
+  2. `baw wallet settings --json`: Reads daily spending limits (`dailyLimit`, `quotaLeft`, `quotaUsed`), token allowlists (`tradeAllTokens`), and risk policies (`abnormalTxnHandling`).
+  3. `baw wallet tx-lock --binanceChainId 56 --json`: Fails closed if the wallet is `LOCKED` (pending transactions or Binance App double-confirm required).
+  4. `baw wallet balance --binanceChainId 56 --json`: Live balance cross-verification. Blocks with `EXECUTION_BLOCKED_INSUFFICIENT_LIVE_BALANCE` if both NVDAB and USDC balances are zero.
+  5. `baw approvals list --binanceChainId 56 --json`: Inspects EVM spender authorizations without performing silent auto-approvals.
+  6. `baw market-order quote --json`: Pre-trade quote validation for expected output amounts and slippage.
+  7. `baw market-order swap --fromTokenQty ... --fromToken ... --toToken ... --binanceChainId 56 [--slippage auto] [--mev true] --json`: Strictly SPOT ONLY market order dispatch on BSC Mainnet.
+  8. `baw market-order list --orderId <id> --json`: Lifecycle polling to terminal states (`FINISHED` or `FAILED`).
+  9. BSC JSON-RPC (`eth_getTransactionReceipt`): On-chain verification of transaction execution status (`0x1` for success, `0x0` for revert).
+- **Hard Security & Fail-Closed Invariants Verified**:
+  - **Zero Private-Key Storage**: StockPilot never asks for, stores, or handles private keys or mnemonics. The official Binance Agentic Wallet handles session keys and signing.
+  - **Explicit User Approval Boundary**: Live trades require explicit confirmation (`UserApprovalDecision.approved === true`). Unapproved proposals halt at `APPROVAL_REQUIRED`. Denied approvals transition to `EXECUTION_BLOCKED_USER_APPROVAL_DENIED`.
+  - **Live Tiny Execution Cap**: Enforces a configured cap (`tinyExecutionCapUsd`, default $25.00) substantially below the $5,000 strategy circuit breaker for initial live testing.
+  - **Zero Balance Guard**: Returns `EXECUTION_BLOCKED_INSUFFICIENT_LIVE_BALANCE` when wallet holds 0 NVDAB and 0 USDC. Never fabricates funds.
+  - **Idempotency Protection**: Deterministic SHA-256 idempotency key (`proposalId:evidenceHash:simulationHash:walletAddress`) prevents double-execution or replay.
+  - **Ambiguity Handling**: Network errors after submission or during receipt queries resolve to `EXECUTION_UNKNOWN`. Never converts uncertainty into success.
+  - **Safe Dry-Run Mode**: Isolated execution flow with prefixed IDs (`dryrun-order-...`) and explicit `isDryRun: true` flags that cannot masquerade as live transactions.
+- **Verification & Test Results**:
+  - `npm test`: **211/211 tests passing** across 11 test suites (100% pass rate).
+  - `npm run build`: `tsc` compiles cleanly with 0 errors.
+  - Read-only simulation smoke test: Confirmed zero funds moved and live execution switch remains intentionally disabled (`allowLiveExecution = false`).
+
+
 
 
 

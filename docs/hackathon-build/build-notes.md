@@ -98,11 +98,26 @@ flowchart LR
   - 19 GenLayer verification tests + 25 Binance simulation tests.
   - 170/170 tests passing across 9 vitest suites. Clean TypeScript `npm run build`.
 
-### Phase 4: Execution Pipeline & Agentic Wallet Integration (NEXT)
-- [ ] Implement `BinanceTradingClient` (`src/binance/trading-client.ts`):
-  - RFQ Quote polling (`GET /api/v1/dex/aggregator/quote`).
-  - Signing payload generator (`GET /api/v1/dex/aggregator/swap`).
-- [ ] Integrate Binance Agentic Wallet (`baw`) for user spending limit checks and EIP-712 typed-data signing.
+### Phase 4: Execution Pipeline & Official Binance Agentic Wallet Integration (COMPLETED)
+- [x] Implement `BinanceAgenticWalletCliClient` (`src/execution/binance-agentic-wallet-client.ts`):
+  - Programmatic wrapper for official `baw` CLI commands with `--json` output parsing.
+  - Sockets for `wallet status`, `wallet settings` (quotas & limits), `wallet tx-lock`, `wallet balance`, `approvals list`, `market-order quote`, `market-order swap`, and `market-order list`.
+  - BSC Mainnet on-chain transaction receipt confirmation via JSON-RPC `eth_getTransactionReceipt`.
+- [x] Implement `AgenticExecutionAdapter` (`src/execution/agentic-execution-adapter.ts`):
+  - Strictly accepts ONLY proposals passing GenLayer verification and Binance simulation.
+  - Enforces 14+ hard pre-execution gates (evidence hash, proposal ID, simulation identity, market open, quote freshness, spread bound, circuit breaker, EVM wallet).
+  - Enforces Agentic Wallet policy checks (daily spending quota, token allowlist, tx-lock UNLOCKED).
+  - Enforces Zero Balance Guard: returns `EXECUTION_BLOCKED_INSUFFICIENT_LIVE_BALANCE` if wallet has 0 NVDAB and 0 USDC.
+  - Enforces Tiny Live Execution Cap (`tinyExecutionCapUsd`, default $25.00) for initial live test.
+  - Enforces Explicit User Approval Boundary (`APPROVAL_REQUIRED` / `UserApprovalDecision`).
+  - Strictly SPOT ONLY (market-order swap between NVDAB and USDC on BSC Mainnet).
+  - SHA-256 Idempotency protection preventing duplicate executions or replays.
+  - Distinguishes 7 explicit execution states (never converts ambiguity to success; network loss $\rightarrow$ `EXECUTION_UNKNOWN`).
+  - Safe Dry-Run mode (`isDryRun: true`) clearly flagged with synthetic test IDs.
+  - Immutable audit logging without credentials or private keys.
+- [x] Comprehensive Test Suites (`tests/agentic-execution-adapter.test.ts` & `tests/binance-agentic-wallet-client.test.ts`):
+  - 30 adapter tests + 11 client tests (41 new tests).
+  - Total: **211/211 unit tests passing** across 11 test suites. Clean TypeScript `npm run build`.
 - [ ] Connect with BNB Agent Studio workflow trigger.
 
 ### Phase 5: UI Integration & DevEx Report

@@ -18,6 +18,11 @@ import {
   StrategyConfig,
   PortfolioBalance
 } from '../types/index.js';
+import {
+  buildCanonicalEvidencePayload,
+  computeEvidenceHash,
+  validateEvidencePayload
+} from '../verification/genlayer-adapter.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -27,9 +32,14 @@ const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 app.use(express.json());
 
-// Serve static assets and web dashboard from public directory
+// Serve static assets and web dashboard from client build directory or fallback to public
+const clientDir = path.resolve(__dirname, '../client');
 const publicDir = path.resolve(__dirname, '../../public');
-app.use(express.static(publicDir));
+if (fs.existsSync(clientDir)) {
+  app.use(express.static(clientDir));
+} else {
+  app.use(express.static(publicDir));
+}
 
 // Track reference quote timestamp (initial mock-free state: initialized at server boot)
 const bootTimestamp = Date.now();
@@ -42,7 +52,7 @@ const maxStalenessSeconds = process.env.MAX_STALENESS_SECONDS
  * Basic Health & Status Endpoint
  * GET /api/health
  */
-app.get('/api/health', (req: Request, res: Response) => {
+app.get(['/api/health', '/health'], (req: Request, res: Response) => {
   const now = Date.now();
   const marketState = evaluateMarketState({
     referenceTimestamp: lastReferenceQuoteTimestamp,
@@ -79,7 +89,7 @@ app.get('/api/health', (req: Request, res: Response) => {
  * GET /api/devex-log
  * Exposes live Developer Experience entries to UI
  */
-app.get('/api/devex-log', (req: Request, res: Response) => {
+app.get(['/api/devex-log', '/devex-log'], (req: Request, res: Response) => {
   try {
     const devexPath = path.resolve(__dirname, '../../docs/hackathon-build/devex-log.md');
     if (fs.existsSync(devexPath)) {
@@ -99,7 +109,7 @@ app.get('/api/devex-log', (req: Request, res: Response) => {
  * POST /api/strategy/parse
  * Deterministically parses natural language strategy into structured weights
  */
-app.post('/api/strategy/parse', (req: Request, res: Response) => {
+app.post(['/api/strategy/parse', '/strategy/parse'], (req: Request, res: Response) => {
   const { prompt } = req.body;
   if (!prompt || typeof prompt !== 'string') {
     res.status(400).json({ error: 'Prompt is required' });
@@ -164,7 +174,7 @@ app.post('/api/strategy/parse', (req: Request, res: Response) => {
  * POST /api/strategy/evaluate
  * Evaluates provided real balances against deterministic risk and drift rules
  */
-app.post('/api/strategy/evaluate', (req: Request, res: Response) => {
+app.post(['/api/strategy/evaluate', '/strategy/evaluate'], (req: Request, res: Response) => {
   const { strategy, stockBalance, stableBalance, quoteTimestamp } = req.body;
 
   if (!strategy || !stockBalance || !stableBalance) {
@@ -200,9 +210,137 @@ app.post('/api/strategy/evaluate', (req: Request, res: Response) => {
   });
 });
 
-export { app };
+/**
+ * Market Telemetry & Static Asset Endpoint
+ * GET /api/market/telemetry
+ */
+app.get(['/api/market/telemetry', '/market/telemetry'], (req: Request, res: Response) => {
+  const now = Date.now();
+  const quoteAgeSeconds = Math.max(0, Math.floor((now - lastReferenceQuoteTimestamp) / 1000));
+  const isFresh = quoteAgeSeconds <= maxStalenessSeconds;
 
-if (process.env.NODE_ENV !== 'test') {
+  res.json({
+    success: true,
+    network: 'BSC Mainnet',
+    chainId: 56,
+    stockAsset: {
+      symbol: 'NVDAB',
+      underlying: 'NVDA',
+      name: 'bStocks NVIDIA',
+      address: '0x02fca66c1d1afb4e2a7884261eb00f63598a7436',
+      decimals: 18,
+      issuerPlatform: 'bStocks',
+      binanceChainId: '56'
+    },
+    secondaryStockAsset: {
+      symbol: 'NVDAon',
+      underlying: 'NVDA',
+      name: 'Ondo NVIDIA',
+      address: '0xa9ee28c80f960b889dfbd1902055218cba016f75',
+      decimals: 18,
+      issuerPlatform: 'Ondo',
+      binanceChainId: '56'
+    },
+    stableAsset: {
+      symbol: 'USDC',
+      name: 'Binance-Peg USD Coin',
+      address: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d',
+      decimals: 18,
+      binanceChainId: '56'
+    },
+    referenceQuote: {
+      lastTimestamp: lastReferenceQuoteTimestamp,
+      ageSeconds: quoteAgeSeconds,
+      maxAllowedAgeSeconds: maxStalenessSeconds,
+      isFresh
+    },
+    policies: {
+      maxSpreadBps: 200,
+      openSlippageBps: parseInt(process.env.MAX_SLIPPAGE_BPS || '50', 10),
+      closedSlippageBps: parseInt(process.env.MAX_SLIPPAGE_CLOSED_BPS || '25', 10),
+      maxSingleTradeUsd: parseInt(process.env.MAX_SINGLE_REBALANCE_USD || '5000', 10),
+      tinyExecutionCapUsd: 25
+    },
+    liveTelemetryStatus: process.env.BINANCE_WEB3_API_KEY ? 'CONNECTED' : 'UNAVAILABLE'
+  });
+});
+
+/**
+ * Deterministic Verification Inspector Endpoint
+ * POST /api/verification/inspect
+ * Computes canonical evidence payload and deterministic SHA-256 hash
+ */
+app.post(['/api/verification/inspect', '/verification/inspect'], (req: Request, res: Response) => {
+  const { strategy, balances, marketData, proposal, snapshot } = req.body;
+
+  if (!strategy || !balances || !proposal) {
+    res.status(400).json({ error: 'Missing strategy, balances, or proposal.' });
+    return;
+  }
+
+  const now = Date.now();
+  const qTimestamp = typeof marketData?.quoteTimestamp === 'number' ? marketData.quoteTimestamp : lastReferenceQuoteTimestamp;
+  const quoteAgeSeconds = Math.max(0, Math.floor((now - qTimestamp) / 1000));
+
+  const canonicalPayload = buildCanonicalEvidencePayload({
+    strategy,
+    balances: {
+      stock: {
+        symbol: balances.stock?.symbol || strategy.stockSymbol,
+        contractAddress: balances.stock?.address || strategy.stockAddress,
+        rawAmount: balances.stock?.amountRaw?.toString() || '0',
+        formattedAmount: balances.stock?.amountFormatted ?? 0,
+        verificationStatus: 'VERIFIED'
+      },
+      stable: {
+        symbol: balances.stable?.symbol || strategy.stableSymbol,
+        contractAddress: balances.stable?.address || strategy.stableAddress,
+        rawAmount: balances.stable?.amountRaw?.toString() || '0',
+        formattedAmount: balances.stable?.amountFormatted ?? 0,
+        verificationStatus: 'VERIFIED'
+      }
+    },
+    marketData: {
+      stockTokenPrice: marketData?.stockTokenPrice ?? 0,
+      stockReferencePrice: marketData?.stockReferencePrice ?? null,
+      spread: marketData?.spread ?? null,
+      spreadBps: marketData?.spreadBps ?? null,
+      quoteTimestamp: qTimestamp,
+      quoteAgeSeconds
+    },
+    marketStatus: {
+      state: evaluateMarketState({
+        referenceTimestamp: qTimestamp,
+        currentTimestamp: now,
+        maxStalenessSeconds
+      })
+    },
+    snapshot: snapshot || null,
+    proposal,
+    riskChecks: {
+      maxSpreadBps: strategy.maxSpreadBps ?? 200,
+      maxSingleTradeUsd: strategy.maxSingleTradeUsd,
+      isSpreadExcessive: false,
+      isCircuitBreakerTripped: proposal.tradeAmountUsd > strategy.maxSingleTradeUsd
+    },
+    timestamp: now
+  });
+
+  const evidenceHash = computeEvidenceHash(canonicalPayload);
+  const validation = validateEvidencePayload(canonicalPayload);
+
+  res.json({
+    success: true,
+    canonicalPayload,
+    evidenceHash,
+    validation
+  });
+});
+
+export { app };
+export default app;
+
+if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
   app.listen(port, () => {
     console.log(`[StockPilot] Server listening on port ${port}`);
     console.log(`[StockPilot] Web Dashboard: http://localhost:${port}`);

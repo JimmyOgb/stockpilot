@@ -263,17 +263,232 @@ export interface GenLayerVerificationAuditRecord {
   rpcUrl: string;
 }
 
-export type ExecutionState = 'PENDING' | 'EXECUTED' | 'FAILED' | 'BLOCKED_FAIL_CLOSED';
+export type ExecutionState =
+  | 'EXECUTION_BLOCKED'
+  | 'APPROVAL_REQUIRED'
+  | 'EXECUTION_SUBMITTED'
+  | 'EXECUTION_PENDING'
+  | 'EXECUTION_CONFIRMED'
+  | 'EXECUTION_FAILED'
+  | 'EXECUTION_UNKNOWN';
+
+export type ExecutionBlockReason =
+  | 'EXECUTION_BLOCKED_INSUFFICIENT_LIVE_BALANCE'
+  | 'EXECUTION_BLOCKED_UNVERIFIED_PROPOSAL'
+  | 'EXECUTION_BLOCKED_SIMULATION_FAILED'
+  | 'EXECUTION_BLOCKED_HASH_MISMATCH'
+  | 'EXECUTION_BLOCKED_ID_MISMATCH'
+  | 'EXECUTION_BLOCKED_MARKET_CLOSED'
+  | 'EXECUTION_BLOCKED_STALE_QUOTE'
+  | 'EXECUTION_BLOCKED_SPREAD_EXCESSIVE'
+  | 'EXECUTION_BLOCKED_CIRCUIT_BREAKER'
+  | 'EXECUTION_BLOCKED_EXCEEDS_TINY_CAP'
+  | 'EXECUTION_BLOCKED_INVALID_WALLET'
+  | 'EXECUTION_BLOCKED_INVALID_ASSET'
+  | 'EXECUTION_BLOCKED_WALLET_LOCKED'
+  | 'EXECUTION_BLOCKED_WALLET_DISCONNECTED'
+  | 'EXECUTION_BLOCKED_WALLET_POLICY_REJECT'
+  | 'EXECUTION_BLOCKED_USER_APPROVAL_DENIED'
+  | 'EXECUTION_BLOCKED_DUPLICATE_EXECUTION'
+  | 'EXECUTION_BLOCKED_LIVE_EXECUTION_DISABLED'
+  | 'EXECUTION_BLOCKED_FAIL_CLOSED';
+
+export interface BscTransactionReceipt {
+  transactionHash: string;
+  blockNumber: number;
+  blockHash: string;
+  from: string;
+  to: string;
+  status: '0x1' | '0x0' | number;
+  gasUsed: string;
+  cumulativeGasUsed: string;
+  effectiveGasPrice?: string;
+}
+
+export interface ExecutionAuditRecord {
+  auditId: string;
+  proposalId: string;
+  strategyId: string;
+  verificationHash: string;
+  simulationHash: string;
+  walletAddress: string;
+  tokenContract: string;
+  direction: RebalanceAction;
+  requestedAmount: number;
+  actualExecutedAmount: number | null;
+  executionOrderId: string | null;
+  txHash: string | null;
+  submissionTimestamp: number | null;
+  confirmationTimestamp: number | null;
+  finalExecutionStatus: ExecutionState;
+  failureReason: string | null;
+  idempotencyKey: string;
+  isDryRun: boolean;
+  blockReason?: ExecutionBlockReason | string | null;
+}
 
 export interface ExecutionReceipt {
   executionId: string;
+  proposalId: string;
   strategyId: string;
   state: ExecutionState;
-  txHash?: string;
-  rebalanceProposal: RebalanceProposal;
-  verificationResult: VerificationResult;
+  idempotencyKey: string;
+  orderId?: string | null;
+  txHash?: string | null;
+  actualExecutedAmount?: number | null;
+  requestedAmount: number;
+  direction: RebalanceAction;
+  tokenContract: string;
+  walletAddress: string;
+  verificationHash: string;
+  simulationHash: string;
+  submissionTimestamp?: number | null;
+  confirmationTimestamp?: number | null;
+  blockReason?: ExecutionBlockReason | string | null;
+  failureReason?: string | null;
+  isDryRun: boolean;
+  bscReceipt?: BscTransactionReceipt | null;
   executedAt: number;
   errorMessage?: string;
+  rebalanceProposal?: RebalanceProposal;
+  verificationResult?: VerificationResult;
+}
+
+export interface AgenticWalletSettings {
+  dailyLimit: number;
+  quotaUsed: number;
+  quotaLeft: number;
+  tradeAllTokens: boolean;
+  abnormalTxnHandling: 'AutoReject' | 'NeedConfirmation' | string;
+  allowedTokens?: string[];
+  sessionExpireTime?: string;
+  devMode?: {
+    enabled: boolean;
+    dailyLimit?: number;
+    expiresAt?: number | null;
+  };
+}
+
+export interface AgenticWalletStatus {
+  status: 'CONNECTED' | 'UNCONNECTED' | 'CREATING';
+}
+
+export interface AgenticWalletTxLock {
+  status: 'UNLOCKED' | 'LOCKED';
+}
+
+export interface AgenticWalletBalanceItem {
+  symbol: string;
+  address: string;
+  binanceChainId: string;
+  balance: string;
+  price?: string;
+  value?: string;
+}
+
+export interface AgenticWalletApprovalItem {
+  tokenSymbol: string;
+  tokenContract: string;
+  tokenDecimals?: number;
+  spender: string;
+  spenderName?: string | null;
+  amount: string;
+  riskyLevel: string;
+  riskyMsg?: string | null;
+  binanceChainId: string;
+  type: string;
+}
+
+export interface AgenticMarketOrderQuoteParams {
+  fromTokenQty: number | string;
+  fromToken: string;
+  toToken: string;
+  binanceChainId: string;
+  slippage?: string;
+}
+
+export interface AgenticMarketOrderQuote {
+  fromCoinSymbol: string;
+  fromCoinAmount: string;
+  toCoinSymbol: string;
+  toCoinAmount: string;
+  slippage: number | string;
+}
+
+export interface AgenticMarketOrderSwapParams {
+  fromTokenQty: number | string;
+  fromToken: string;
+  toToken: string;
+  binanceChainId: string;
+  slippage?: string;
+  mev?: boolean | string;
+  gasLevel?: 'LOW' | 'MEDIUM' | 'HIGH';
+}
+
+export interface AgenticMarketOrderSwapResult {
+  orderId: string;
+}
+
+export interface AgenticMarketOrderDetail {
+  orderId: string;
+  chain?: string;
+  fromToken?: string;
+  fromTokenName?: string;
+  fromTokenQty?: string;
+  toToken?: string;
+  toTokenName?: string;
+  toTokenQty?: string;
+  status: 'PENDING' | 'FINISHED' | 'FAILED' | string;
+  slippage?: string;
+  txHash?: string | null;
+  bookTime?: string;
+  updatedTime?: string;
+  failReason?: string | null;
+}
+
+export interface UserApprovalRequest {
+  proposalId: string;
+  strategyId: string;
+  action: RebalanceAction;
+  sourceAsset: string;
+  targetAsset: string;
+  fromTokenAddress: string;
+  toTokenAddress: string;
+  tradeAmountUsd: number;
+  approxTokenAmount: number;
+  slippageLimitBps: number;
+  marketPrice: number;
+  referencePrice: number | null;
+  spreadBps: number | null;
+  evidenceHash: string;
+  simulationHash: string;
+  estimatedFeeBnb: number | null;
+  walletAddress: string;
+  idempotencyKey: string;
+  isTinyLiveCapEnforced: boolean;
+  requestedAt: number;
+}
+
+export interface UserApprovalDecision {
+  approved: boolean;
+  approvedBy: string;
+  approvedAt: number;
+  notes?: string;
+}
+
+export interface ExecutionPreflightInput {
+  strategy: StrategyConfig;
+  canonicalPayload: CanonicalEvidencePayload;
+  verificationResult: VerificationResult;
+  simulationResult: BinanceSimulationResult;
+  walletAddress: string;
+  userApproval?: UserApprovalDecision;
+  options?: {
+    isDryRun?: boolean;
+    maxAllowedQuoteAgeSeconds?: number;
+    tinyExecutionCapUsd?: number;
+    slippage?: string;
+  };
 }
 
 export interface SystemHealthStatus {
