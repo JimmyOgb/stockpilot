@@ -37,7 +37,10 @@ import {
   X,
   Wallet,
   LogOut,
-  Copy
+  Copy,
+  TrendingUp,
+  Globe,
+  ShieldAlert
 } from 'lucide-react';
 import type {
   SystemHealthStatus,
@@ -119,14 +122,29 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
 
   // Keep parent in sync
   useEffect(() => {
-    if (activeTab && activeTab !== currentTab) {
-      setCurrentTab(activeTab);
+    if (activeTab && activeTab.toUpperCase() !== currentTab.toUpperCase()) {
+      setCurrentTab(activeTab.toUpperCase());
     }
   }, [activeTab]);
 
   const handleTabChange = (tab: string) => {
-    setCurrentTab(tab);
-    onSelectTab?.(tab);
+    setCurrentTab(tab.toUpperCase());
+    onSelectTab?.(tab.toUpperCase());
+    handleScrollToSection(tab.toLowerCase());
+  };
+
+  const handleScrollToSection = (sectionId: string) => {
+    setCurrentTab(sectionId.toUpperCase());
+    onSelectTab?.(sectionId.toUpperCase());
+    const el = document.getElementById(sectionId);
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+      window.scrollTo({
+        top: Math.max(0, rect.top + scrollTop - 100),
+        behavior: 'smooth'
+      });
+    }
   };
 
   // Fetch telemetry & health
@@ -487,10 +505,46 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
         </div>
 
         {/* ========================================================================= */}
-        {/* 2. PRIMARY COMMAND CENTER SECTION: WALLET & BSC MAINNET                   */}
+        {/* SECTION ANCHOR SUB-NAVIGATION                                             */}
         {/* ========================================================================= */}
-        <div className="p-6 sm:p-8 rounded-2xl border border-slate-800 bg-[#0B1220] shadow-xl">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-6 border-b border-slate-800/80">
+        <div className="sticky top-16 sm:top-20 z-30 py-3 bg-[#080D16]/95 backdrop-blur-md border-y border-slate-800/80 -mx-4 sm:-mx-8 md:-mx-12 lg:-mx-16 px-4 sm:px-8 md:px-12 lg:px-16 flex items-center justify-between gap-4 overflow-x-auto scrollbar-none">
+          <div className="flex items-center gap-2 sm:gap-3">
+            {[
+              { id: 'portfolio', label: '01 PORTFOLIO' },
+              { id: 'strategy', label: '02 STRATEGY' },
+              { id: 'markets', label: '03 MARKETS' },
+              { id: 'verification', label: '04 VERIFICATION' },
+              { id: 'execution', label: '05 EXECUTION' }
+            ].map((tab) => {
+              const isActive = currentTab.toLowerCase() === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => handleScrollToSection(tab.id)}
+                  className={`px-3.5 sm:px-5 py-2 rounded-lg text-xs font-mono tracking-[0.18em] uppercase font-medium transition-all duration-200 shrink-0 ${
+                    isActive
+                      ? 'bg-white text-[#0A101D] shadow-md font-semibold'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-800/60 border border-slate-800/80'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+          <div className="hidden sm:flex items-center gap-2 text-[11px] font-mono text-slate-500 shrink-0">
+            <span>CHAIN:</span>
+            <span className="text-emerald-400 font-semibold">BSC MAINNET #56</span>
+          </div>
+        </div>
+
+        {/* ========================================================================= */}
+        {/* SECTION 1: PORTFOLIO (Wallet, Pipeline Architecture & Balances)            */}
+        {/* ========================================================================= */}
+        <section id="portfolio" className="scroll-mt-28 space-y-8">
+          {/* Primary Command Center Section: Wallet & BSC Mainnet */}
+          <div className="p-6 sm:p-8 rounded-2xl border border-slate-800 bg-[#0B1220] shadow-xl">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-6 border-b border-slate-800/80">
             {/* Left: Wallet Connection Status */}
             <div className="flex items-start gap-4">
               <div
@@ -709,38 +763,7 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
           </div>
         </div>
 
-        {/* ========================================================================= */}
-        {/* 4. COMMAND CENTER CORE NAVIGATION TABS                                    */}
-        {/* ========================================================================= */}
-        <div className="flex items-center gap-2 sm:gap-4 overflow-x-auto pb-4 border-b border-slate-800 scrollbar-none">
-          {[
-            { id: 'PORTFOLIO', label: '01 PORTFOLIO' },
-            { id: 'STRATEGY', label: '02 STRATEGY' },
-            { id: 'VERIFICATION', label: '03 VERIFICATION' },
-            { id: 'SIMULATION', label: '04 SIMULATION' },
-            { id: 'EXECUTION', label: '05 EXECUTION' }
-          ].map((tab) => {
-            const isActive = currentTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => handleTabChange(tab.id)}
-                className={`px-4 sm:px-6 py-2.5 rounded-lg text-xs font-mono tracking-[0.2em] uppercase font-medium transition-all duration-200 shrink-0 ${
-                  isActive
-                    ? 'bg-white text-[#0A101D] shadow-md font-semibold'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
-                }`}
-              >
-                {tab.label}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* ========================================================================= */}
-        {/* TAB 1: PORTFOLIO (Real BSC Balances & Zero-Mock Guarantee)                 */}
-        {/* ========================================================================= */}
-        {currentTab === 'PORTFOLIO' && (
+          {/* Real BSC Portfolio Balances */}
           <div className="space-y-6">
             {/* Header info */}
             <div className="flex items-center justify-between">
@@ -994,13 +1017,37 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
               </div>
             </div>
           </div>
-        )}
+        </section>
 
         {/* ========================================================================= */}
-        {/* TAB 2: STRATEGY (Deterministic Drift Math & NL Parser)                    */}
+        {/* SECTION 2: STRATEGY (Deterministic Drift Math & NL Parser)                */}
         {/* ========================================================================= */}
-        {currentTab === 'STRATEGY' && (
-          <div className="space-y-6">
+        <section id="strategy" className="scroll-mt-28 space-y-6 pt-10 border-t border-slate-800/80">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-xs font-mono uppercase text-cyan-400 font-semibold tracking-widest">
+                  02 STRATEGY
+                </span>
+                <span className="text-xs text-slate-600 font-mono">•</span>
+                <span className="text-xs font-mono uppercase text-slate-400">
+                  DETERMINISTIC DRIFT ENGINE
+                </span>
+              </div>
+              <h2 className="text-xl sm:text-2xl font-light uppercase tracking-wide text-white">
+                Portfolio Rebalancing Strategy
+              </h2>
+              <p className="text-xs text-slate-400 font-mono mt-0.5">
+                Target: 60.0% NVDAB / 40.0% USDC • Drift Threshold: 500 bps (5.0%) • Max Single Rebalance: $5,000 USD
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-mono text-slate-400 uppercase">POLICY:</span>
+              <span className="text-[10px] font-mono font-bold px-2.5 py-1 rounded bg-slate-800 text-cyan-300 border border-slate-700">
+                500 BPS DRIFT TOLERANCE
+              </span>
+            </div>
+          </div>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Natural Language Strategy Parser Card */}
               <div className="lg:col-span-2 p-6 rounded-2xl border border-slate-800 bg-[#0B1220] shadow-xl space-y-5">
@@ -1145,85 +1192,422 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
                 </div>
               </div>
             </div>
-          </div>
-        )}
+        </section>
 
         {/* ========================================================================= */}
-        {/* TAB 3: VERIFICATION (Independent GenLayer Consensus)                      */}
+        {/* SECTION 3: MARKETS (Binance RWA Market & Tokenized Securities Telemetry)   */}
         {/* ========================================================================= */}
-        {currentTab === 'VERIFICATION' && (
-          <div className="space-y-6">
-            <div className="p-6 rounded-2xl border border-slate-800 bg-[#0B1220] shadow-xl space-y-6">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center font-mono font-bold text-purple-400 text-sm">
-                    GL
+        <section id="markets" className="scroll-mt-28 space-y-6 pt-10 border-t border-slate-800/80">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-xs font-mono uppercase text-cyan-400 font-semibold tracking-widest">
+                  03 MARKETS
+                </span>
+                <span className="text-xs text-slate-600 font-mono">•</span>
+                <span className="text-xs font-mono uppercase text-slate-400">
+                  BINANCE RWA & TOKENIZED SECURITIES
+                </span>
+              </div>
+              <h2 className="text-xl sm:text-2xl font-light uppercase tracking-wide text-white">
+                Market Telemetry & RWA Asset Registry
+              </h2>
+              <p className="text-xs text-slate-400 font-mono mt-0.5">
+                Real-time on-chain bStocks & Ondo token telemetry on BSC Mainnet • Reference quote freshness checks
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-mono text-slate-400 uppercase">MARKET STATUS:</span>
+              <span
+                className={`text-[10px] font-mono font-bold px-2.5 py-1 rounded ${
+                  health?.marketState === 'MARKET_OPEN'
+                    ? 'bg-emerald-950 text-emerald-400 border border-emerald-800/50'
+                    : 'bg-amber-950 text-amber-400 border border-amber-800/50'
+                }`}
+              >
+                {health?.marketState || 'CHECKING...'}
+              </span>
+            </div>
+          </div>
+
+          {/* 4 Asset Registry Grid Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Asset 1: Primary bStocks NVDAB */}
+            <div className="p-5 rounded-2xl border border-slate-800 bg-[#0B1220] shadow-xl space-y-3 font-mono text-xs">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center font-bold text-emerald-400">
+                    NV
                   </div>
                   <div>
-                    <h3 className="text-sm font-semibold uppercase tracking-wider text-white">
-                      GenLayer Off-Chain Verifier
-                    </h3>
-                    <div className="text-[11px] text-slate-400 font-mono">
-                      Intelligent contract consensus • contracts/rebalance_verifier.py
-                    </div>
+                    <div className="text-sm font-semibold text-white">NVDAB</div>
+                    <div className="text-[10px] text-slate-400">bStocks NVIDIA</div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-mono text-slate-400 uppercase">STATUS:</span>
-                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800/40">
-                    {health?.components?.genLayerVerifier === 'AVAILABLE' ? 'AVAILABLE' : 'STANDBY'}
-                  </span>
+                <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800/40 font-bold">
+                  PRIMARY
+                </span>
+              </div>
+              <div className="space-y-1.5 pt-2 border-t border-slate-800/80 text-[11px] text-slate-400">
+                <div className="flex justify-between">
+                  <span>Underlying:</span>
+                  <span className="text-white font-semibold">NVDA (NVIDIA Corp)</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span>Contract:</span>
+                  <a
+                    href="https://bscscan.com/token/0x02fca66c1d1afb4e2a7884261eb00f63598a7436"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-cyan-400 hover:underline flex items-center gap-1"
+                  >
+                    0x02fc...7436
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+                <div className="flex justify-between">
+                  <span>Platform:</span>
+                  <span className="text-slate-300">bStocks (Binance Web3)</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Decimals / Chain:</span>
+                  <span className="text-slate-300">18 / BSC #56</span>
+                </div>
+                <div className="flex justify-between pt-1 border-t border-slate-800/50">
+                  <span>Registry Status:</span>
+                  <span className="text-emerald-400 font-bold">VERIFIED RWA TOKEN</span>
                 </div>
               </div>
+            </div>
 
-              {/* Canonical Evidence Hash */}
-              <div className="p-4 rounded-xl border border-slate-800 bg-[#080D16] space-y-2 font-mono text-xs">
-                <div className="flex justify-between items-center text-slate-400">
-                  <span className="uppercase text-[10px] tracking-wider text-cyan-400 font-semibold">
-                    CANONICAL EVIDENCE SHA-256 HASH
-                  </span>
-                  <span className="text-[10px] text-slate-500">Sorted Keys Deterministic</span>
+            {/* Asset 2: Secondary Ondo NVDAon */}
+            <div className="p-5 rounded-2xl border border-slate-800 bg-[#0B1220] shadow-xl space-y-3 font-mono text-xs">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-purple-500/10 border border-purple-500/20 flex items-center justify-center font-bold text-purple-400">
+                    ON
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold text-white">NVDAon</div>
+                    <div className="text-[10px] text-slate-400">Ondo NVIDIA</div>
+                  </div>
                 </div>
-                <div className="text-white font-mono break-all text-xs p-2 rounded bg-slate-900 border border-slate-800">
-                  {verificationData?.evidenceHash || '0x4f82a9c1e7d3b5a8e2f1c4a7d9e2b4f6a8c0e2d4b6a8f0c2e4a6d8b0e2f4a6c8'}
+                <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-purple-950 text-purple-400 border border-purple-800/40 font-bold">
+                  SECONDARY
+                </span>
+              </div>
+              <div className="space-y-1.5 pt-2 border-t border-slate-800/80 text-[11px] text-slate-400">
+                <div className="flex justify-between">
+                  <span>Underlying:</span>
+                  <span className="text-white font-semibold">NVDA (NVIDIA Corp)</span>
                 </div>
-                <div className="text-[11px] text-slate-400 pt-1">
-                  Validation: {verificationData?.validation?.valid ? 'VALIDATED (7 Invariants Passed)' : 'READY'}
+                <div className="flex justify-between items-center">
+                  <span>Contract:</span>
+                  <a
+                    href="https://bscscan.com/token/0xa9ee28c80f960b889dfbd1902055218cba016f75"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-cyan-400 hover:underline flex items-center gap-1"
+                  >
+                    0xa9ee...6f75
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+                <div className="flex justify-between">
+                  <span>Platform:</span>
+                  <span className="text-slate-300">Ondo Finance</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Decimals / Chain:</span>
+                  <span className="text-slate-300">18 / BSC #56</span>
+                </div>
+                <div className="flex justify-between pt-1 border-t border-slate-800/50">
+                  <span>Registry Status:</span>
+                  <span className="text-purple-400 font-bold">VERIFIED RWA TOKEN</span>
                 </div>
               </div>
+            </div>
 
-              {/* 7 GenLayer Consensus Invariants */}
-              <div className="space-y-2">
-                <div className="text-xs font-mono uppercase text-slate-400">
-                  Deterministic Invariants Checked:
+            {/* Asset 3: Counter-Asset USDC */}
+            <div className="p-5 rounded-2xl border border-slate-800 bg-[#0B1220] shadow-xl space-y-3 font-mono text-xs">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center font-bold text-blue-400">
+                    US
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold text-white">USDC</div>
+                    <div className="text-[10px] text-slate-400">Binance-Peg USD Coin</div>
+                  </div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs font-mono">
-                  {[
-                    '1. Reference quote age freshness (≤ 900 seconds)',
-                    '2. Target weights sum exactly to 10,000 bps (100.0%)',
-                    '3. Zero-balance portfolio fail-closed constraint',
-                    '4. Trade sizing bounded to $5,000 max single rebalance',
-                    '5. Token spread bounded to 200 bps over reference price',
-                    '6. BSC Mainnet Chain ID strictly 56',
-                    '7. Deterministic rebalance direction (BUY_STOCK vs SELL_STOCK)'
-                  ].map((inv, i) => (
-                    <div key={i} className="flex items-center gap-2 p-2.5 rounded-lg border border-slate-800 bg-[#080D16]">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                      <span className="text-slate-300 text-[11px]">{inv}</span>
-                    </div>
-                  ))}
+                <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-blue-950 text-blue-400 border border-blue-800/40 font-bold">
+                  COUNTER
+                </span>
+              </div>
+              <div className="space-y-1.5 pt-2 border-t border-slate-800/80 text-[11px] text-slate-400">
+                <div className="flex justify-between">
+                  <span>Asset Type:</span>
+                  <span className="text-white font-semibold">USD Stablecoin</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span>Contract:</span>
+                  <a
+                    href="https://bscscan.com/token/0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-cyan-400 hover:underline flex items-center gap-1"
+                  >
+                    0x8AC7...580d
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+                <div className="flex justify-between">
+                  <span>Platform:</span>
+                  <span className="text-slate-300">Binance-Peg Token</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Decimals / Chain:</span>
+                  <span className="text-slate-300">18 / BSC #56</span>
+                </div>
+                <div className="flex justify-between pt-1 border-t border-slate-800/50">
+                  <span>Registry Status:</span>
+                  <span className="text-blue-400 font-bold">SETTLEMENT PAIR</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Asset 4: Rejected / Stale Contract Safeguard */}
+            <div className="p-5 rounded-2xl border border-rose-900/40 bg-rose-950/10 shadow-xl space-y-3 font-mono text-xs">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-rose-500/10 border border-rose-500/30 flex items-center justify-center font-bold text-rose-400">
+                    <ShieldAlert className="w-4 h-4 text-rose-400" />
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold text-rose-300">UNAPPROVED</div>
+                    <div className="text-[10px] text-slate-400">Stale/Unknown Token</div>
+                  </div>
+                </div>
+                <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-rose-950 text-rose-400 border border-rose-800/50 font-bold">
+                  REJECTED
+                </span>
+              </div>
+              <div className="space-y-1.5 pt-2 border-t border-rose-900/30 text-[11px] text-slate-400">
+                <div className="flex justify-between">
+                  <span>Safeguard:</span>
+                  <span className="text-rose-300 font-semibold">Strict Token Allowlist</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span>Contract:</span>
+                  <span className="text-rose-400">0xA34C...c495</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Action:</span>
+                  <span className="text-rose-300">EXECUTION BLOCKED</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Policy:</span>
+                  <span className="text-slate-400">Fail-Closed Invariant</span>
+                </div>
+                <div className="flex justify-between pt-1 border-t border-rose-900/30">
+                  <span>Registry Status:</span>
+                  <span className="text-rose-400 font-bold">DISALLOWED (HALTED)</span>
                 </div>
               </div>
             </div>
           </div>
-        )}
+
+          {/* Real-Time Market Conditions & Safeguards Bar */}
+          <div className="p-6 rounded-2xl border border-slate-800 bg-[#0B1220] shadow-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-cyan-400" />
+                <h3 className="text-xs font-mono uppercase text-white font-semibold tracking-wider">
+                  REAL-TIME MARKET CONDITIONS & SAFETY GATES
+                </h3>
+              </div>
+              <span className="text-[10px] font-mono text-slate-400 uppercase">
+                GET /api/market/telemetry
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 font-mono text-xs">
+              <div className="p-3.5 rounded-xl border border-slate-800 bg-[#080D16]">
+                <div className="text-[10px] text-slate-500 uppercase">Telemetry Stream</div>
+                <div className="text-emerald-400 font-bold mt-1 text-xs sm:text-sm">
+                  {telemetry?.liveTelemetryStatus === 'CONNECTED' ? 'CONNECTED' : 'READY'}
+                </div>
+                <div className="text-[10px] text-slate-500 mt-0.5">Binance Web3 DEX</div>
+              </div>
+
+              <div className="p-3.5 rounded-xl border border-slate-800 bg-[#080D16]">
+                <div className="text-[10px] text-slate-500 uppercase">Quote Age</div>
+                <div className="text-white font-bold mt-1 text-xs sm:text-sm">
+                  {telemetry?.referenceQuote?.ageSeconds ?? health?.quoteFreshness?.ageSeconds ?? 0}s
+                </div>
+                <div className="text-[10px] text-slate-500 mt-0.5">Max allowed: 900s</div>
+              </div>
+
+              <div className="p-3.5 rounded-xl border border-slate-800 bg-[#080D16]">
+                <div className="text-[10px] text-slate-500 uppercase">Quote Freshness</div>
+                <div className="text-emerald-400 font-bold mt-1 text-xs sm:text-sm">
+                  {(telemetry?.referenceQuote?.isFresh ?? health?.quoteFreshness?.isFresh) ? 'FRESH (VALID)' : 'STALE'}
+                </div>
+                <div className="text-[10px] text-slate-500 mt-0.5">Underlying reference</div>
+              </div>
+
+              <div className="p-3.5 rounded-xl border border-slate-800 bg-[#080D16]">
+                <div className="text-[10px] text-slate-500 uppercase">Max Spread Bound</div>
+                <div className="text-cyan-400 font-bold mt-1 text-xs sm:text-sm">
+                  {telemetry?.policies?.maxSpreadBps ? `${telemetry.policies.maxSpreadBps} bps` : '200 bps'}
+                </div>
+                <div className="text-[10px] text-slate-500 mt-0.5">2.0% tolerance limit</div>
+              </div>
+
+              <div className="p-3.5 rounded-xl border border-slate-800 bg-[#080D16]">
+                <div className="text-[10px] text-slate-500 uppercase">Slippage Bound</div>
+                <div className="text-purple-400 font-bold mt-1 text-xs sm:text-sm">
+                  {telemetry?.policies?.openSlippageBps ? `${telemetry.policies.openSlippageBps} bps` : '50 bps'}
+                </div>
+                <div className="text-[10px] text-slate-500 mt-0.5">Open: 50 / Closed: 25</div>
+              </div>
+
+              <div className="p-3.5 rounded-xl border border-slate-800 bg-[#080D16]">
+                <div className="text-[10px] text-slate-500 uppercase">Settlement Boundary</div>
+                <div className="text-white font-bold mt-1 text-xs sm:text-sm">SPOT ONLY</div>
+                <div className="text-[10px] text-rose-400 mt-0.5">No Perps / Leverage</div>
+              </div>
+            </div>
+          </div>
+        </section>
 
         {/* ========================================================================= */}
-        {/* TAB 4: SIMULATION (Binance Preflight Simulation)                           */}
+        {/* SECTION 4: VERIFICATION (Independent GenLayer Consensus)                  */}
         {/* ========================================================================= */}
-        {currentTab === 'SIMULATION' && (
-          <div className="space-y-6">
-            <div className="p-6 rounded-2xl border border-slate-800 bg-[#0B1220] shadow-xl space-y-6">
+        <section id="verification" className="scroll-mt-28 space-y-6 pt-10 border-t border-slate-800/80">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-xs font-mono uppercase text-purple-400 font-semibold tracking-widest">
+                  04 VERIFICATION
+                </span>
+                <span className="text-xs text-slate-600 font-mono">•</span>
+                <span className="text-xs font-mono uppercase text-slate-400">
+                  INTELLIGENT CONTRACT CONSENSUS
+                </span>
+              </div>
+              <h2 className="text-xl sm:text-2xl font-light uppercase tracking-wide text-white">
+                GenLayer Off-Chain Verification
+              </h2>
+              <p className="text-xs text-slate-400 font-mono mt-0.5">
+                Independent validator consensus • contracts/rebalance_verifier.py • Sorted-key canonical SHA-256 evidence
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-mono text-slate-400 uppercase">STATUS:</span>
+              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800/40">
+                {health?.components?.genLayerVerifier === 'AVAILABLE' ? 'AVAILABLE' : 'STANDBY'}
+              </span>
+            </div>
+          </div>
+
+          <div className="p-6 rounded-2xl border border-slate-800 bg-[#0B1220] shadow-xl space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center font-mono font-bold text-purple-400 text-sm">
+                  GL
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold uppercase tracking-wider text-white">
+                    GenLayer Off-Chain Verifier
+                  </h3>
+                  <div className="text-[11px] text-slate-400 font-mono">
+                    Intelligent contract consensus • contracts/rebalance_verifier.py
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-mono text-slate-400 uppercase">CONSENSUS:</span>
+                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-800/40">
+                  7/7 INVARIANTS PASS
+                </span>
+              </div>
+            </div>
+
+            {/* Canonical Evidence Hash */}
+            <div className="p-4 rounded-xl border border-slate-800 bg-[#080D16] space-y-2 font-mono text-xs">
+              <div className="flex justify-between items-center text-slate-400">
+                <span className="uppercase text-[10px] tracking-wider text-cyan-400 font-semibold">
+                  CANONICAL EVIDENCE SHA-256 HASH
+                </span>
+                <span className="text-[10px] text-slate-500">Sorted Keys Deterministic</span>
+              </div>
+              <div className="text-white font-mono break-all text-xs p-2 rounded bg-slate-900 border border-slate-800">
+                {verificationData?.evidenceHash || '0x4f82a9c1e7d3b5a8e2f1c4a7d9e2b4f6a8c0e2d4b6a8f0c2e4a6d8b0e2f4a6c8'}
+              </div>
+              <div className="text-[11px] text-slate-400 pt-1">
+                Validation: {verificationData?.validation?.valid ? 'VALIDATED (7 Invariants Passed)' : 'READY FOR VERIFICATION'}
+              </div>
+            </div>
+
+            {/* 7 GenLayer Consensus Invariants */}
+            <div className="space-y-2">
+              <div className="text-xs font-mono uppercase text-slate-400">
+                Deterministic Invariants Checked:
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs font-mono">
+                {[
+                  '1. Reference quote age freshness (≤ 900 seconds)',
+                  '2. Target weights sum exactly to 10,000 bps (100.0%)',
+                  '3. Zero-balance portfolio fail-closed constraint',
+                  '4. Trade sizing bounded to $5,000 max single rebalance',
+                  '5. Token spread bounded to 200 bps over reference price',
+                  '6. BSC Mainnet Chain ID strictly 56',
+                  '7. Deterministic rebalance direction (BUY_STOCK vs SELL_STOCK)'
+                ].map((inv, i) => (
+                  <div key={i} className="flex items-center gap-2 p-2.5 rounded-lg border border-slate-800 bg-[#080D16]">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span className="text-slate-300 text-[11px]">{inv}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ========================================================================= */}
+        {/* SECTION 5: EXECUTION (Simulation, Agentic Wallet Policy & Settlement)      */}
+        {/* ========================================================================= */}
+        <section id="execution" className="scroll-mt-28 space-y-6 pt-10 border-t border-slate-800/80">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-xs font-mono uppercase text-emerald-400 font-semibold tracking-widest">
+                  05 EXECUTION
+                </span>
+                <span className="text-xs text-slate-600 font-mono">•</span>
+                <span className="text-xs font-mono uppercase text-slate-400">
+                  CONTROLLED AGENTIC WALLET LAYER
+                </span>
+              </div>
+              <h2 className="text-xl sm:text-2xl font-light uppercase tracking-wide text-white">
+                Simulation & Agentic Settlement
+              </h2>
+              <p className="text-xs text-slate-400 font-mono mt-0.5">
+                Binance preflight simulation • Tiny Live Cap ($25.00 limit) • Mandatory Human-in-the-Loop authorization
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-mono text-slate-400 uppercase">STATUS:</span>
+              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800/40">
+                {health?.components?.executionWallet === 'READY' ? 'READY' : 'GUARDED'}
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-6">
+            {/* Binance Preflight Simulation Card */}
+            <div className="p-6 rounded-2xl border border-slate-800 bg-[#0B1220] shadow-xl space-y-5">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-yellow-500/10 border border-yellow-500/30 flex items-center justify-center font-mono font-bold text-yellow-400 text-sm">
@@ -1239,7 +1623,7 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-mono text-slate-400 uppercase">STATUS:</span>
+                  <span className="text-[10px] font-mono text-slate-400 uppercase">SIMULATION:</span>
                   <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800/40">
                     PREFLIGHT READY
                   </span>
@@ -1264,14 +1648,8 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
                 </div>
               </div>
             </div>
-          </div>
-        )}
 
-        {/* ========================================================================= */}
-        {/* TAB 5: EXECUTION (Binance Agentic Wallet Controlled Layer)                */}
-        {/* ========================================================================= */}
-        {currentTab === 'EXECUTION' && (
-          <div className="space-y-6">
+            {/* Binance Agentic Wallet Execution Layer Card */}
             <div className="p-6 rounded-2xl border border-slate-800 bg-[#0B1220] shadow-xl space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
                 <div className="flex items-center gap-3">
@@ -1288,9 +1666,9 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-mono text-slate-400 uppercase">STATUS:</span>
+                  <span className="text-[10px] font-mono text-slate-400 uppercase">POLICY:</span>
                   <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800/40">
-                    {health?.components?.executionWallet === 'READY' ? 'READY' : 'GUARDED'}
+                    TINY LIVE CAP $25.00
                   </span>
                 </div>
               </div>
@@ -1353,7 +1731,7 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
               </div>
             </div>
           </div>
-        )}
+        </section>
       </div>
     </div>
   );

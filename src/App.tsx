@@ -16,7 +16,6 @@ export const App: React.FC = () => {
   const [statusModalOpen, setStatusModalOpen] = useState<boolean>(false);
   const [walletModalOpen, setWalletModalOpen] = useState<boolean>(false);
   const [activeItem, setActiveItem] = useState<string>('STOCKPILOT');
-  const [commandCenterTab, setCommandCenterTab] = useState<string>('PORTFOLIO');
 
   const wallet = useWallet();
 
@@ -28,13 +27,17 @@ export const App: React.FC = () => {
     canvasLive
   } = useVideoScrub({ videoSrc: VIDEO_URL });
 
-  const scrollToCommandCenter = useCallback((tab?: string) => {
-    if (tab) {
-      setCommandCenterTab(tab);
-    }
-    const el = document.getElementById('command-center');
+  const scrollToSection = useCallback((sectionId: string) => {
+    setActiveItem(sectionId.toUpperCase());
+    const el = document.getElementById(sectionId);
     if (el) {
-      el.scrollIntoView({ behavior: 'smooth' });
+      const rect = el.getBoundingClientRect();
+      const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+      const targetY = rect.top + scrollTop - 100;
+      window.scrollTo({
+        top: Math.max(0, targetY),
+        behavior: 'smooth'
+      });
     } else if (containerRef.current) {
       const totalScrollable = containerRef.current.offsetHeight - window.innerHeight;
       window.scrollTo({
@@ -57,22 +60,27 @@ export const App: React.FC = () => {
     }
 
     if (item === 'PORTFOLIO') {
-      scrollToCommandCenter('PORTFOLIO');
+      scrollToSection('portfolio');
       return;
     }
 
     if (item === 'STRATEGY') {
-      scrollToCommandCenter('STRATEGY');
+      scrollToSection('strategy');
+      return;
+    }
+
+    if (item === 'MARKETS' || item === 'MARKET') {
+      scrollToSection('markets');
       return;
     }
 
     if (item === 'VERIFICATION') {
-      scrollToCommandCenter('VERIFICATION');
+      scrollToSection('verification');
       return;
     }
 
-    if (item === 'EXECUTION' || item === 'AGENT') {
-      scrollToCommandCenter('EXECUTION');
+    if (item === 'EXECUTION' || item === 'AGENT' || item === 'SIMULATION') {
+      scrollToSection('execution');
       return;
     }
 
@@ -80,16 +88,53 @@ export const App: React.FC = () => {
       setStatusModalOpen(true);
       return;
     }
-  }, [scrollToCommandCenter]);
+  }, [scrollToSection]);
 
   const handleLaunch = useCallback(() => {
-    scrollToCommandCenter('PORTFOLIO');
+    scrollToSection('portfolio');
     if (wallet.status === 'DISCONNECTED') {
       setTimeout(() => {
         setWalletModalOpen(true);
       }, 500);
     }
-  }, [scrollToCommandCenter, wallet.status]);
+  }, [scrollToSection, wallet.status]);
+
+  // Active section tracking on scroll
+  React.useEffect(() => {
+    const handleScroll = () => {
+      const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+      const heroHeight = containerRef.current?.offsetHeight ?? 0;
+      const heroThreshold = Math.max(0, heroHeight - window.innerHeight);
+
+      if (scrollTop < heroThreshold * 0.85) {
+        setActiveItem('STOCKPILOT');
+        return;
+      }
+
+      // Check section offsets from bottom to top
+      const sectionMap: { id: string; name: string }[] = [
+        { id: 'execution', name: 'EXECUTION' },
+        { id: 'verification', name: 'VERIFICATION' },
+        { id: 'markets', name: 'MARKETS' },
+        { id: 'strategy', name: 'STRATEGY' },
+        { id: 'portfolio', name: 'PORTFOLIO' }
+      ];
+
+      for (const section of sectionMap) {
+        const el = document.getElementById(section.id);
+        if (el) {
+          const rect = el.getBoundingClientRect();
+          if (rect.top <= 220) {
+            setActiveItem(section.name);
+            break;
+          }
+        }
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [containerRef]);
 
   return (
     <div className="relative min-h-screen bg-[#080D16] text-slate-100 selection:bg-cyan-500/20 selection:text-cyan-200">
@@ -160,9 +205,8 @@ export const App: React.FC = () => {
 
         {/* Section 5 & 6: Institutional Command Center Dashboard */}
         <CommandCenter
-          activeTab={commandCenterTab}
+          activeTab={activeItem}
           onSelectTab={(tab) => {
-            setCommandCenterTab(tab);
             setActiveItem(tab);
           }}
           onOpenStatusModal={() => setStatusModalOpen(true)}

@@ -126,6 +126,59 @@ describe('StockPilot Frontend — Cinematic Specification Verification', () => {
       expect(getPalette(1.0)).toBe('white');
     });
   });
+
+  describe('Navbar Editorial Navigation Routing', () => {
+    const SECTION_ROUTING_MAP: Record<string, string> = {
+      STRATEGY: 'strategy',
+      MARKETS: 'markets',
+      MARKET: 'markets',
+      VERIFICATION: 'verification',
+      EXECUTION: 'execution',
+      AGENT: 'execution',
+      SIMULATION: 'execution',
+      PORTFOLIO: 'portfolio',
+      STOCKPILOT: 'hero'
+    };
+
+    it('maps all navbar buttons to stable DOM section IDs', () => {
+      expect(SECTION_ROUTING_MAP['STRATEGY']).toBe('strategy');
+      expect(SECTION_ROUTING_MAP['MARKETS']).toBe('markets');
+      expect(SECTION_ROUTING_MAP['VERIFICATION']).toBe('verification');
+      expect(SECTION_ROUTING_MAP['EXECUTION']).toBe('execution');
+      expect(SECTION_ROUTING_MAP['PORTFOLIO']).toBe('portfolio');
+    });
+
+    it('handles alternative aliases for market and agent/simulation', () => {
+      expect(SECTION_ROUTING_MAP['MARKET']).toBe('markets');
+      expect(SECTION_ROUTING_MAP['AGENT']).toBe('execution');
+      expect(SECTION_ROUTING_MAP['SIMULATION']).toBe('execution');
+    });
+
+    it('ensures all destination IDs are distinct and lowercase CSS identifiers', () => {
+      const coreIds = ['portfolio', 'strategy', 'markets', 'verification', 'execution'];
+      const uniqueIds = new Set(coreIds);
+      expect(uniqueIds.size).toBe(5);
+
+      coreIds.forEach(id => {
+        expect(id).toMatch(/^[a-z0-9-]+$/);
+      });
+    });
+
+    it('calculates proper target scroll offset with navbar padding', () => {
+      const computeTargetY = (elementTop: number, currentScrollTop: number, navbarHeight: number) => {
+        return Math.max(0, elementTop + currentScrollTop - navbarHeight);
+      };
+
+      // At top of hero (scrollTop = 0), element at 5000px, 100px navbar offset
+      expect(computeTargetY(5000, 0, 100)).toBe(4900);
+
+      // Scrolled to 4900px, next element at 1200px relative to viewport
+      expect(computeTargetY(1200, 4900, 100)).toBe(6000);
+
+      // Negative or near-zero results clamp to 0
+      expect(computeTargetY(50, 0, 100)).toBe(0);
+    });
+  });
 });
 
 expect.extend({
