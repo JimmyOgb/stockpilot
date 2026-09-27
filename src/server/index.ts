@@ -23,6 +23,14 @@ import {
   computeEvidenceHash,
   validateEvidencePayload
 } from '../verification/genlayer-adapter.js';
+import {
+  isValidEvmAddress,
+  encodeErc20BalanceOfCalldata,
+  formatUnits,
+  BinanceWalletBalanceClient
+} from '../binance/wallet-balance-client.js';
+import { BinanceRequestSigner } from '../binance/request-signer.js';
+import { WalletPortfolioResponse, ConnectedTokenBalance } from '../types/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -335,6 +343,214 @@ app.post(['/api/verification/inspect', '/verification/inspect'], (req: Request, 
     evidenceHash,
     validation
   });
+});
+
+/**
+ * Real BSC Wallet Balances Endpoint
+ * GET /api/wallet/balances?address=0x...
+ * POST /api/wallet/balances { address: '0x...' }
+ *
+ * Enforces Zero-Mock Invariant:
+ * Queries real BSC on-chain balances for NVDAB and USDC.
+ * Cross-verified against Binance Web3 API when credentials are present.
+ */
+async function handleWalletBalances(rawAddress: unknown, res: Response) {
+  if (typeof rawAddress !== 'string' || !isValidEvmAddress(rawAddress)) {
+    res.status(400).json({
+      success: false,
+      error: 'Invalid or missing BSC wallet address. Please provide a valid 20-byte EVM address.'
+    });
+    return;
+  }
+
+  const walletAddress = rawAddress.trim().toLowerCase();
+  const bscRpcUrl = process.env.BSC_RPC_URL || 'https://bsc-dataseed.binance.org/';
+  const stockContract = process.env.TOKENIZED_STOCK_ADDRESS || '0x02fca66c1d1afb4e2a7884261eb00f63598a7436';
+  const stableContract = process.env.STABLECOIN_ADDRESS || '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d';
+
+  const tokens = [
+    {
+      symbol: process.env.TOKENIZED_STOCK_SYMBOL || 'NVDAB',
+      name: 'Tokenized NVIDIA (bStocks)',
+      contractAddress: stockContract,
+      decimals: 18,
+      priceUsd: 140.0
+    },
+    {
+      symbol: process.env.STABLECOIN_SYMBOL || 'USDC',
+      name: 'Binance-Peg USD Coin',
+      contractAddress: stableContract,
+      decimals: 18,
+      priceUsd: 1.0
+    }
+  ];
+
+  try {
+    // If Binance Web3 credentials are present, use the dual-verifying client
+    if (process.env.BINANCE_WEB3_API_KEY && process.env.BINANCE_WEB3_API_SECRET) {
+      try {
+        const signer = new BinanceRequestSigner({
+          apiKey: process.env.BINANCE_WEB3_API_KEY,
+          apiSecret: process.env.BINANCE_WEB3_API_SECRET
+        });
+        const client = new BinanceWalletBalanceClient({
+          signer,
+          bscRpcUrl
+        });
+        const result = await client.getVerifiedWalletBalances({
+          walletAddress,
+          tokens: tokens.map(t => ({
+            binanceChainId: '56',
+            tokenContractAddress: t.contractAddress,
+            symbol: t.symbol,
+            decimals: t.decimals
+          }))
+        });
+
+        const balances: ConnectedTokenBalance[] = tokens.map(t => {
+          const match = result.balances.find(b => b.tokenContractAddress.toLowerCase() === t.contractAddress.toLowerCase());
+          const raw = match?.verifiedRawBalance ?? match?.rpcRawBalance ?? 0n;
+          const formatted = match?.verifiedFormattedBalance ?? match?.rpcFormattedBalance ?? '0';
+          const numericFormatted = parseFloat(formatted) || 0;
+          return {
+            symbol: t.symbol,
+            name: t.name,
+            contractAddress: t.contractAddress,
+            decimals: t.decimals,
+            rawBalance: raw.toString(),
+            formattedBalance: formatted,
+            priceUsd: t.priceUsd,
+            valueUsd: numericFormatted * t.priceUsd,
+            verificationStatus: match?.verificationStatus === 'VERIFIED' ? 'VERIFIED' : match?.verificationStatus === 'MISMATCH' ? 'MISMATCH' : 'UNAVAILABLE'
+          };
+        });
+
+        const totalValueUsd = balances.reduce((sum, b) => sum + b.valueUsd, 0);
+        const isZeroPortfolio = balances.every(b => b.rawBalance === '0');
+
+        const responseData: WalletPortfolioResponse = {
+          success: true,
+          walletAddress,
+          chainId: 56,
+          network: 'BSC Mainnet',
+          balances,
+          totalValueUsd,
+          isZeroPortfolio,
+          portfolioStatus: result.overallStatus === 'VERIFIED' ? 'VERIFIED' : result.overallStatus === 'MISMATCH' ? 'MISMATCH' : 'UNAVAILABLE',
+          decisionState: isZeroPortfolio ? 'INSUFFICIENT_LIVE_PORTFOLIO' : 'PORTFOLIO_READY',
+          executionGate: isZeroPortfolio ? 'EXECUTION_BLOCKED' : 'READY',
+          explanation: isZeroPortfolio
+            ? 'No eligible NVDAB or USDC balance is currently available for execution.'
+            : 'Portfolio balances successfully verified on BSC Mainnet.',
+          checkedAt: result.checkedAt
+        };
+        res.json(responseData);
+        return;
+      } catch {
+        // Fall through to direct BSC JSON-RPC
+      }
+    }
+
+    // Direct BSC JSON-RPC eth_call (balanceOf)
+    const now = Date.now();
+    const balancePromises = tokens.map(async (token) => {
+      const calldata = encodeErc20BalanceOfCalldata(walletAddress);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 6000);
+      try {
+        const rpcRes = await fetch(bscRpcUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: Math.floor(Math.random() * 1000000),
+            method: 'eth_call',
+            params: [{ to: token.contractAddress, data: calldata }, 'latest']
+          }),
+          signal: controller.signal
+        });
+        clearTimeout(timer);
+        if (!rpcRes.ok) throw new Error(`HTTP ${rpcRes.status}`);
+        const json = await rpcRes.json();
+        if (json.error || !json.result || json.result === '0x') {
+          return {
+            symbol: token.symbol,
+            name: token.name,
+            contractAddress: token.contractAddress,
+            decimals: token.decimals,
+            rawBalance: '0',
+            formattedBalance: '0',
+            priceUsd: token.priceUsd,
+            valueUsd: 0,
+            verificationStatus: 'UNAVAILABLE' as const
+          };
+        }
+        const raw = BigInt(json.result);
+        const formatted = formatUnits(raw, token.decimals);
+        const numeric = parseFloat(formatted) || 0;
+        return {
+          symbol: token.symbol,
+          name: token.name,
+          contractAddress: token.contractAddress,
+          decimals: token.decimals,
+          rawBalance: raw.toString(),
+          formattedBalance: formatted,
+          priceUsd: token.priceUsd,
+          valueUsd: numeric * token.priceUsd,
+          verificationStatus: 'VERIFIED' as const
+        };
+      } catch {
+        clearTimeout(timer);
+        return {
+          symbol: token.symbol,
+          name: token.name,
+          contractAddress: token.contractAddress,
+          decimals: token.decimals,
+          rawBalance: '0',
+          formattedBalance: '0',
+          priceUsd: token.priceUsd,
+          valueUsd: 0,
+          verificationStatus: 'UNAVAILABLE' as const
+        };
+      }
+    });
+
+    const balances = await Promise.all(balancePromises);
+    const totalValueUsd = balances.reduce((sum, b) => sum + b.valueUsd, 0);
+    const isZeroPortfolio = balances.every(b => b.rawBalance === '0');
+    const allVerified = balances.every(b => b.verificationStatus === 'VERIFIED');
+
+    const responseData: WalletPortfolioResponse = {
+      success: true,
+      walletAddress,
+      chainId: 56,
+      network: 'BSC Mainnet',
+      balances,
+      totalValueUsd,
+      isZeroPortfolio,
+      portfolioStatus: allVerified ? 'VERIFIED' : 'UNAVAILABLE',
+      decisionState: isZeroPortfolio ? 'INSUFFICIENT_LIVE_PORTFOLIO' : 'PORTFOLIO_READY',
+      executionGate: isZeroPortfolio ? 'EXECUTION_BLOCKED' : 'READY',
+      explanation: isZeroPortfolio
+        ? 'No eligible NVDAB or USDC balance is currently available for execution.'
+        : 'Portfolio balances successfully verified on BSC Mainnet.',
+      checkedAt: now
+    };
+    res.json(responseData);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ success: false, error: message });
+  }
+}
+
+app.get(['/api/wallet/balances', '/wallet/balances'], async (req: Request, res: Response) => {
+  const address = req.query.address as string;
+  await handleWalletBalances(address, res);
+});
+
+app.post(['/api/wallet/balances', '/wallet/balances'], async (req: Request, res: Response) => {
+  const address = (req.body?.address || req.query.address) as string;
+  await handleWalletBalances(address, res);
 });
 
 export { app };

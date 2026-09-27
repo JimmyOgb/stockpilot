@@ -584,3 +584,5 @@ export interface BinanceSimulationAuditRecord {
   reason: string;
 }
 
+export * from './wallet.js';
+

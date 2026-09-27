@@ -3,7 +3,8 @@
  */
 
 import React, { useEffect } from 'react';
-import { X, ArrowRight, Activity, ShieldCheck } from 'lucide-react';
+import { X, ArrowRight, Activity, ShieldCheck, Wallet } from 'lucide-react';
+import type { WalletConnectionStatus } from '../types/wallet.js';
 
 export interface MobileMenuProps {
   isOpen: boolean;
@@ -11,6 +12,9 @@ export interface MobileMenuProps {
   activeItem?: string;
   onSelectItem?: (item: string) => void;
   onOpenStatus?: () => void;
+  walletStatus?: WalletConnectionStatus;
+  walletAbbreviatedAddress?: string;
+  onOpenWalletModal?: () => void;
 }
 
 const NAV_ITEMS = [
@@ -26,7 +30,10 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({
   onClose,
   activeItem = 'STOCKPILOT',
   onSelectItem,
-  onOpenStatus
+  onOpenStatus,
+  walletStatus = 'DISCONNECTED',
+  walletAbbreviatedAddress = '0x........',
+  onOpenWalletModal
 }) => {
   // Lock body scroll when mobile menu is open
   useEffect(() => {
@@ -91,6 +98,26 @@ export const MobileMenu: React.FC<MobileMenuProps> = ({
             </button>
           );
         })}
+
+        {/* Mobile Wallet Connection Trigger */}
+        <div className="pt-4">
+          <button
+            onClick={() => {
+              onClose();
+              onOpenWalletModal?.();
+            }}
+            className={`flex items-center gap-3 px-6 py-3 rounded-full border transition-all text-xs font-mono uppercase tracking-wider font-semibold ${
+              walletStatus === 'CONNECTED'
+                ? 'border-emerald-500/60 bg-emerald-950/40 text-emerald-300'
+                : 'border-white/40 bg-white/10 text-white'
+            }`}
+          >
+            <Wallet className="w-4 h-4" />
+            <span>
+              {walletStatus === 'CONNECTED' ? walletAbbreviatedAddress : 'CONNECT WALLET'}
+            </span>
+          </button>
+        </div>
       </div>
 
       {/* Footer Info & Actions */}

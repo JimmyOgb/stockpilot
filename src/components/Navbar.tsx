@@ -11,7 +11,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Info, Activity } from 'lucide-react';
+import { Info, Activity, Wallet, LogOut, AlertTriangle, RefreshCw } from 'lucide-react';
+import type { WalletConnectionStatus } from '../types/wallet.js';
 
 export interface NavbarProps {
   scrollProgress: number;
@@ -20,6 +21,12 @@ export interface NavbarProps {
   onSelectItem?: (item: string) => void;
   onOpenStatus?: () => void;
   systemStatus?: string;
+  walletStatus?: WalletConnectionStatus;
+  walletAddress?: string | null;
+  walletAbbreviatedAddress?: string;
+  isBscMainnet?: boolean;
+  onOpenWalletModal?: () => void;
+  onDisconnectWallet?: () => void;
 }
 
 const NAV_ITEMS = [
@@ -35,7 +42,13 @@ export const Navbar: React.FC<NavbarProps> = ({
   activeItem = 'STOCKPILOT',
   onSelectItem,
   onOpenStatus,
-  systemStatus = 'HEALTHY'
+  systemStatus = 'HEALTHY',
+  walletStatus = 'DISCONNECTED',
+  walletAddress,
+  walletAbbreviatedAddress = '0x........',
+  isBscMainnet = false,
+  onOpenWalletModal,
+  onDisconnectWallet
 }) => {
   const [mounted, setMounted] = useState<boolean>(false);
 
@@ -114,9 +127,47 @@ export const Navbar: React.FC<NavbarProps> = ({
         </nav>
 
         {/* ========================================================================= */}
-        {/* RIGHT: STATUS + MENU Controls                                             */}
+        {/* RIGHT: WALLET + STATUS + MENU Controls                                    */}
         {/* ========================================================================= */}
-        <div className="flex items-center gap-5 sm:gap-8">
+        <div className="flex items-center gap-3 sm:gap-6">
+          {/* WALLET Trigger */}
+          <button
+            onClick={onOpenWalletModal}
+            style={{ transitionDelay: '350ms' }}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all duration-300 ${
+              walletStatus === 'CONNECTED'
+                ? 'border-emerald-500/50 bg-emerald-950/30 text-emerald-300 hover:bg-emerald-950/50'
+                : walletStatus === 'WRONG_NETWORK'
+                ? 'border-amber-500/60 bg-amber-950/30 text-amber-300 hover:bg-amber-950/50 animate-pulse'
+                : walletStatus === 'CONNECTING'
+                ? 'border-cyan-500/50 bg-cyan-950/30 text-cyan-300'
+                : `${borderColor} hover:opacity-100 ${textColor} opacity-90 hover:bg-white/10`
+            } ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-3'} text-[11px] font-mono tracking-wider uppercase font-medium focus:outline-none`}
+          >
+            {walletStatus === 'CONNECTED' ? (
+              <>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span>{walletAbbreviatedAddress}</span>
+                <span className="hidden sm:inline text-[9px] px-1 py-0.2 rounded bg-emerald-900/60 text-emerald-400">BSC #56</span>
+              </>
+            ) : walletStatus === 'WRONG_NETWORK' ? (
+              <>
+                <AlertTriangle className="w-3 h-3 text-amber-400" />
+                <span>SWITCH TO BSC</span>
+              </>
+            ) : walletStatus === 'CONNECTING' ? (
+              <>
+                <RefreshCw className="w-3 h-3 animate-spin text-cyan-400" />
+                <span>CONNECTING...</span>
+              </>
+            ) : (
+              <>
+                <Wallet className="w-3 h-3" />
+                <span>CONNECT WALLET</span>
+              </>
+            )}
+          </button>
+
           {/* STATUS trigger */}
           <button
             onClick={onOpenStatus}

@@ -4,7 +4,9 @@ import { MobileMenu } from './components/MobileMenu.js';
 import { CinematicHero } from './components/CinematicHero.js';
 import { CommandCenter } from './components/CommandCenter.js';
 import { StatusModal } from './components/StatusModal.js';
+import { WalletModal } from './components/WalletModal.js';
 import { useVideoScrub } from './hooks/useVideoScrub.js';
+import { useWallet } from './hooks/useWallet.js';
 
 export const VIDEO_URL =
   'https://d8j0ntlcm91z4cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260821_114821_a8ca298f-be2c-4613-a4dd-51b69e16bbde.mp4';
@@ -12,8 +14,11 @@ export const VIDEO_URL =
 export const App: React.FC = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
   const [statusModalOpen, setStatusModalOpen] = useState<boolean>(false);
+  const [walletModalOpen, setWalletModalOpen] = useState<boolean>(false);
   const [activeItem, setActiveItem] = useState<string>('STOCKPILOT');
   const [commandCenterTab, setCommandCenterTab] = useState<string>('PORTFOLIO');
+
+  const wallet = useWallet();
 
   const {
     containerRef,
@@ -51,13 +56,13 @@ export const App: React.FC = () => {
       return;
     }
 
-    if (item === 'STRATEGY') {
-      scrollToCommandCenter('STRATEGY');
+    if (item === 'PORTFOLIO') {
+      scrollToCommandCenter('PORTFOLIO');
       return;
     }
 
-    if (item === 'MARKETS' || item === 'MARKET') {
-      scrollToCommandCenter('MARKET');
+    if (item === 'STRATEGY') {
+      scrollToCommandCenter('STRATEGY');
       return;
     }
 
@@ -79,7 +84,12 @@ export const App: React.FC = () => {
 
   const handleLaunch = useCallback(() => {
     scrollToCommandCenter('PORTFOLIO');
-  }, [scrollToCommandCenter]);
+    if (wallet.status === 'DISCONNECTED') {
+      setTimeout(() => {
+        setWalletModalOpen(true);
+      }, 500);
+    }
+  }, [scrollToCommandCenter, wallet.status]);
 
   return (
     <div className="relative min-h-screen bg-[#080D16] text-slate-100 selection:bg-cyan-500/20 selection:text-cyan-200">
@@ -90,6 +100,12 @@ export const App: React.FC = () => {
         activeItem={activeItem}
         onSelectItem={handleSelectItem}
         onOpenStatus={() => setStatusModalOpen(true)}
+        walletStatus={wallet.status}
+        walletAddress={wallet.address}
+        walletAbbreviatedAddress={wallet.abbreviatedAddress}
+        isBscMainnet={wallet.isBscMainnet}
+        onOpenWalletModal={() => setWalletModalOpen(true)}
+        onDisconnectWallet={wallet.disconnectWallet}
       />
 
       {/* Fullscreen Mobile Menu Drawer */}
@@ -102,12 +118,31 @@ export const App: React.FC = () => {
           setMobileMenuOpen(false);
           setStatusModalOpen(true);
         }}
+        walletStatus={wallet.status}
+        walletAbbreviatedAddress={wallet.abbreviatedAddress}
+        onOpenWalletModal={() => setWalletModalOpen(true)}
       />
 
       {/* System Status Modal */}
       <StatusModal
         isOpen={statusModalOpen}
         onClose={() => setStatusModalOpen(false)}
+      />
+
+      {/* Wallet Connection Modal */}
+      <WalletModal
+        isOpen={walletModalOpen}
+        onClose={() => setWalletModalOpen(false)}
+        status={wallet.status}
+        providerType={wallet.providerType}
+        address={wallet.address}
+        abbreviatedAddress={wallet.abbreviatedAddress}
+        chainId={wallet.chainId}
+        error={wallet.error}
+        onConnectBinance={() => wallet.connectWallet('BINANCE')}
+        onConnectInjected={() => wallet.connectWallet('INJECTED')}
+        onDisconnect={wallet.disconnectWallet}
+        onSwitchToBsc={wallet.switchToBsc}
       />
 
       {/* Main Experience */}
@@ -131,6 +166,8 @@ export const App: React.FC = () => {
             setActiveItem(tab);
           }}
           onOpenStatusModal={() => setStatusModalOpen(true)}
+          wallet={wallet}
+          onOpenWalletModal={() => setWalletModalOpen(true)}
         />
       </main>
     </div>

@@ -154,6 +154,36 @@ export const CinematicHero: React.FC<CinematicHeroProps> = ({
               >
                 REAL DATA. INDEPENDENT VERIFICATION. CONTROLLED EXECUTION.
               </p>
+
+              {/* Instant Enter StockPilot Call-to-Action */}
+              <div
+                style={{
+                  transitionDelay: '320ms',
+                  transitionDuration: '0.8s',
+                  transitionTimingFunction: 'cubic-bezier(0.16,1,0.3,1)'
+                }}
+                className={`mt-6 sm:mt-8 flex flex-wrap items-center gap-4 pointer-events-auto transition-all ${
+                  s1Active ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6'
+                }`}
+              >
+                <button
+                  onClick={onLaunch}
+                  className="group relative flex items-center gap-4 px-6 py-3 rounded-full border border-[#1D3045] bg-[#1D3045] hover:bg-[#1D3045]/90 text-white transition-all duration-300 shadow-lg focus:outline-none"
+                >
+                  <span className="text-xs sm:text-sm tracking-[0.25em] uppercase font-semibold text-white">
+                    ENTER STOCKPILOT
+                  </span>
+                  <div className="w-6 h-6 rounded-full bg-white text-[#1D3045] flex items-center justify-center group-hover:translate-x-0.5 transition-transform duration-300">
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </div>
+                </button>
+                <button
+                  onClick={() => scrollToProgress(0.42)}
+                  className="px-4 py-3 text-xs tracking-[0.2em] uppercase font-mono text-[#1D3045]/80 hover:text-[#1D3045] transition-colors"
+                >
+                  EXPLORE ARCHITECTURE ↓
+                </button>
+              </div>
             </div>
 
             {/* Minimal Circular Scroll Indicator near lower-right corner */}

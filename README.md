@@ -6,7 +6,7 @@
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-Vercel-black?style=for-the-badge&logo=vercel)](https://stockpilot-eight-sepia.vercel.app)
 [![GitHub](https://img.shields.io/badge/GitHub-Repository-181717?style=for-the-badge&logo=github)](https://github.com/JimmyOgb/stockpilot)
 [![BNB Chain](https://img.shields.io/badge/Network-BNB%20Chain%20%2356-F0B90B?style=for-the-badge&logo=binance)](https://bscscan.com)
-[![Tests](https://img.shields.io/badge/Vitest-219%2F219%20Passing-brightgreen?style=for-the-badge&logo=vitest)](https://github.com/JimmyOgb/stockpilot)
+[![Tests](https://img.shields.io/badge/Vitest-232%2F232%20Passing-brightgreen?style=for-the-badge&logo=vitest)](https://github.com/JimmyOgb/stockpilot)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?style=for-the-badge&logo=typescript)](https://www.typescriptlang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 
