@@ -506,7 +506,7 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
               </div>
               <div>
                 <div className="text-[10px] font-mono uppercase tracking-[0.25em] text-slate-400">
-                  WALLET CONNECTION
+                  USER DAPP WALLET (OBSERVATION LAYER)
                 </div>
                 <div className="flex items-center gap-3 mt-1">
                   <span className="text-lg font-light uppercase tracking-wider text-white">
@@ -563,7 +563,7 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
                   </div>
                 ) : (
                   <div className="text-xs font-mono text-slate-500 mt-1">
-                    Connect Binance Web3 Wallet or browser EVM wallet to load real BSC token balances.
+                    Connect Binance Web3 Wallet or browser EVM wallet to read your live BSC portfolio. All execution remains bounded by backend Agentic Wallet policy.
                   </div>
                 )}
               </div>

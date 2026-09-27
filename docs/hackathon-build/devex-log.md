@@ -408,7 +408,7 @@ Every real Binance integration attempt must record:
 - **Environment & Configuration**:
   - API Credentials: Real Binance Web3 credentials (`BX-c...1bcd`), secret never leaked.
   - BSC JSON-RPC: `https://bsc-dataseed.binance.org/` (verified live, block `123933820`).
-  - Target Wallet: `0xE4220c4b71877bb94EB173f467ef5c5557017085` (`0xE422...7085`).
+  - Target Wallet: `0xE422...7085` (redacted test address).
   - Resolved RWA Stock Token: bStocks NVIDIA `NVDAB` (`0x02fca66c1d1afb4e2a7884261eb00f63598a7436`).
   - Counter-Asset: Binance-Peg `USDC` (`0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d`).
 - **Telemetry & Pipeline Execution**:

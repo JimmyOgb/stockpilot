@@ -20,13 +20,13 @@ import { isValidEvmAddress, formatUnits, parseUnits } from '../src/binance/walle
 import { app } from '../src/server/index.js';
 
 describe('Wallet Connection & Domain Invariants', () => {
-  const validWallet = '0x8894e0a0c962cb723c1976a4421c95949be2d4e3';
+  const validWallet = '0x8894000000000000000000000000000000002d4e';
   const zeroWallet = '0x0000000000000000000000000000000000000000';
   const invalidWallet = '0xinvalid_address_123';
 
   describe('Address Validation & Abbreviation', () => {
     it('abbreviates valid addresses to 0x1234...ABCD format', () => {
-      expect(abbreviateAddress(validWallet)).toBe('0x8894...d4e3');
+      expect(abbreviateAddress(validWallet)).toBe('0x8894...2d4e');
     });
 
     it('handles null, undefined, or empty address safely', () => {
