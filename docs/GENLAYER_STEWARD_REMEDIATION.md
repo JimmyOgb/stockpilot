@@ -75,3 +75,6 @@ claimed.
 - Final hash-gated commit: `9eebec8` (`fix: enforce server verdict hash equality`).
 - Final deployment: `dpl_4P8hCe47NaRX9tJ7bgcgWLfKC9ps` (Ready; aliases unchanged).
 - Corrected StudioNet deployment: `0xc4a6c4d024ecd5c556e6ac472e9509aadbcb1a8650fa52655b32533635871efe` -> `0xC013CE8fb3697FF7a14DCd5D3a4fEb5d9dbc405C`.
+- Current production configuration commit: `911f90e` (`chore: configure deployed GenLayer verifier`).
+- Current Vercel production deployment: `dpl_CNPJqGegdd4KZVesYfPZuSSxpwUE` (Ready), deployed URL `https://stockpilot-65qoq04ed-jamism123.vercel.app`, with the production aliases above.
+- Production smoke checks: `/api/health` and `/api/market/telemetry` returned HTTP 200; invalid strategy and verification requests returned HTTP 400. Live verification remains blocked safely because the required Binance credentials are not configured.
