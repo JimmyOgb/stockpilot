@@ -359,7 +359,10 @@ app.post(['/api/verification/inspect', '/verification/inspect'], async (req: Req
     const evidenceHash = computeEvidenceHash(canonicalPayload);
     const validation = validateEvidencePayload(canonicalPayload);
     const verifier = new GenLayerVerificationAdapter();
-    const verificationResult = validation.valid ? await verifier.verifyProposal(verificationInput) : { status: 'REJECT', decision: 'NOT_VERIFIED', evidenceHash, proposalId: canonicalPayload.proposalId, reason: validation.reason || 'Live evidence validation failed.', verifiedAt: now } as const;
+    let verificationResult = validation.valid ? await verifier.verifyProposal(verificationInput) : { status: 'REJECT', decision: 'NOT_VERIFIED', evidenceHash, proposalId: canonicalPayload.proposalId, reason: validation.reason || 'Live evidence validation failed.', verifiedAt: now } as const;
+    if (verificationResult.evidenceHash !== evidenceHash) {
+      verificationResult = { ...verificationResult, status: 'REJECT', decision: 'NOT_VERIFIED', reason: 'Server evidence hash does not match the GenLayer verdict hash.' };
+    }
     res.json({ success: true, canonicalPayload, evidenceHash, validation, verificationResult, simulationEligible: verificationResult.decision === 'VERIFIED' && verificationResult.status === 'ALLOW', executionEligible: false });
   } catch {
     res.status(503).json({ success: false, error: 'Live evidence acquisition failed; verification is blocked.' });
