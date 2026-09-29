@@ -501,7 +501,7 @@ describe('Binance Web3 Transaction Preflight & Simulation Client', () => {
       ...validBuyInput,
       marketData: {
         ...validBuyInput.marketData,
-        quoteAgeSeconds: 95
+        quoteTimestamp: now - 95000
       }
     };
     const canonicalPayload = buildCanonicalEvidencePayload(staleQuoteInput);
@@ -539,7 +539,8 @@ describe('Binance Web3 Transaction Preflight & Simulation Client', () => {
       ...validBuyInput,
       marketData: {
         ...validBuyInput.marketData,
-        spreadBps: 350
+        stockTokenPrice: 207,
+        stockReferencePrice: 200
       },
       strategy: {
         ...validBuyInput.strategy,

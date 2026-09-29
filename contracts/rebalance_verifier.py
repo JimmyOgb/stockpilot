@@ -3,11 +3,10 @@
 import genlayer as gl
 from genlayer import *
 import json
+import math
 
-ERROR_EXPECTED  = "[EXPECTED]"
-ERROR_EXTERNAL  = "[EXTERNAL]"
-ERROR_TRANSIENT = "[TRANSIENT]"
-ERROR_LLM       = "[LLM_ERROR]"
+ERROR_LLM = "[LLM_ERROR]"
+
 
 class RebalanceVerifier:
     owner: Address
@@ -21,302 +20,74 @@ class RebalanceVerifier:
     def get_verification_count(self) -> int:
         return int(self.verification_count)
 
+    def _checks(self, **overrides) -> dict:
+        checks = {"payload_valid": False, "math_consistent": False, "direction_consistent": False,
+            "spread_permitted": False, "circuit_breaker_passed": False, "market_state_permitted": False,
+            "non_zero_portfolio": False, "freshness_passed": False, "balance_verified": False,
+            "price_verified": False, "spread_verified": False, "market_state_verified": False,
+            "allocation_drift_valid": False, "trade_direction_valid": False, "trade_amount_valid": False,
+            "risk_limits_passed": False}
+        for key in overrides:
+            if key in checks:
+                checks[key] = overrides[key] is True
+        return checks
+
+    def _result(self, status: str, reason: str, evidence_hash: str, proposal_id: str, checks: dict) -> dict:
+        return {"finalized": True, "consensus_status": "FINALIZED", "status": status, "reason": reason,
+            "evidence_hash": evidence_hash, "proposal_id": proposal_id, "checks": checks}
+
     @gl.public.write
-    def verify_proposal(self, payload_json: str) -> dict:
+    def verify_proposal(self, payload_json: str, submitted_evidence_hash: str) -> dict:
         def leader_fn() -> dict:
+            proposal_id = ""
             try:
                 payload = json.loads(payload_json)
-            except Exception as e:
-                return {
-                    "status": "REJECT",
-                    "reason": f"Malformed JSON payload: {str(e)}",
-                    "evidence_hash": "",
-                    "proposal_id": "",
-                    "checks": {
-                        "payload_valid": False,
-                        "math_consistent": False,
-                        "direction_consistent": False,
-                        "spread_permitted": False,
-                        "circuit_breaker_passed": False,
-                        "market_state_permitted": False,
-                        "non_zero_portfolio": False,
-                    }
-                }
-
-            # 1. Extract required fields
-            proposal_id = str(payload.get("proposalId", ""))
-            target_stock_weight = int(payload.get("targetStockWeightBps", 0))
-            stock_balance_raw = int(payload.get("stockBalanceRaw", "0"))
-            stable_balance_raw = int(payload.get("stableBalanceRaw", "0"))
-            stock_balance_fmt = float(payload.get("stockBalanceFormatted", 0.0))
-            stable_balance_fmt = float(payload.get("stableBalanceFormatted", 0.0))
-            stock_token_price = float(payload.get("stockTokenPrice", 0.0))
-            spread_bps = payload.get("spreadBps")
-            if spread_bps is not None:
-                spread_bps = int(spread_bps)
-            market_state = str(payload.get("marketState", ""))
-            current_stock_weight = int(payload.get("currentStockWeightBps", 0))
-            drift_bps = int(payload.get("calculatedDriftBps", 0))
-            drift_threshold = int(payload.get("driftThresholdBps", 500))
-            proposed_action = str(payload.get("proposedAction", ""))
-            proposed_trade_usd = float(payload.get("proposedTradeAmountUsd", 0.0))
-            max_single_trade_usd = float(payload.get("maxSingleTradeUsd", 5000.0))
-            max_spread_bps = int(payload.get("maxSpreadBps", 200))
-            quote_age_seconds = int(payload.get("quoteAgeSeconds", 0))
-            evidence_hash = str(payload.get("evidenceHash", ""))
-
-            # 2. Check for empty/zero portfolio (Zero Mock Policy enforcement)
-            if stock_balance_raw == 0 and stable_balance_raw == 0:
-                return {
-                    "status": "REJECT",
-                    "reason": "Both stock and stablecoin balances are zero. Proposal cannot be verified.",
-                    "evidence_hash": evidence_hash,
-                    "proposal_id": proposal_id,
-                    "checks": {
-                        "payload_valid": True,
-                        "math_consistent": False,
-                        "direction_consistent": False,
-                        "spread_permitted": False,
-                        "circuit_breaker_passed": False,
-                        "market_state_permitted": False,
-                        "non_zero_portfolio": False,
-                    }
-                }
-
-            # 3. Check market state
-            if market_state != "MARKET_OPEN":
-                return {
-                    "status": "REJECT",
-                    "reason": f"Market state {market_state} does not permit trading.",
-                    "evidence_hash": evidence_hash,
-                    "proposal_id": proposal_id,
-                    "checks": {
-                        "payload_valid": True,
-                        "math_consistent": True,
-                        "direction_consistent": True,
-                        "spread_permitted": True,
-                        "circuit_breaker_passed": True,
-                        "market_state_permitted": False,
-                        "non_zero_portfolio": True,
-                    }
-                }
-
-            # 4. Check quote freshness
-            if quote_age_seconds > 900:
-                return {
-                    "status": "REJECT",
-                    "reason": f"Quote age {quote_age_seconds}s exceeds max allowable 900s.",
-                    "evidence_hash": evidence_hash,
-                    "proposal_id": proposal_id,
-                    "checks": {
-                        "payload_valid": True,
-                        "math_consistent": True,
-                        "direction_consistent": True,
-                        "spread_permitted": True,
-                        "circuit_breaker_passed": True,
-                        "market_state_permitted": True,
-                        "freshness_passed": False,
-                        "non_zero_portfolio": True,
-                    }
-                }
-
-            # 5. Math reconciliation
-            stock_val = stock_balance_fmt * stock_token_price
-            stable_val = stable_balance_fmt * 1.0  # USDC pegged at $1.0
-            computed_total = stock_val + stable_val
-
-            if computed_total <= 0:
-                return {
-                    "status": "REJECT",
-                    "reason": "Computed total portfolio value is zero or negative.",
-                    "evidence_hash": evidence_hash,
-                    "proposal_id": proposal_id,
-                    "checks": {
-                        "payload_valid": True,
-                        "math_consistent": False,
-                        "direction_consistent": False,
-                        "spread_permitted": False,
-                        "circuit_breaker_passed": False,
-                        "market_state_permitted": True,
-                        "non_zero_portfolio": False,
-                    }
-                }
-
-            computed_stock_weight = int(round((stock_val / computed_total) * 10000))
-            computed_drift = abs(computed_stock_weight - target_stock_weight)
-
-            # Tolerance for rounding: allow 2 bps difference
-            if abs(computed_stock_weight - current_stock_weight) > 2 or abs(computed_drift - drift_bps) > 2:
-                return {
-                    "status": "REJECT",
-                    "reason": f"Math mismatch: computed weight {computed_stock_weight} vs reported {current_stock_weight}, drift {computed_drift} vs reported {drift_bps}.",
-                    "evidence_hash": evidence_hash,
-                    "proposal_id": proposal_id,
-                    "checks": {
-                        "payload_valid": True,
-                        "math_consistent": False,
-                        "direction_consistent": False,
-                        "spread_permitted": False,
-                        "circuit_breaker_passed": False,
-                        "market_state_permitted": True,
-                        "non_zero_portfolio": True,
-                    }
-                }
-
-            # 6. Drift threshold vs proposed action
-            if computed_drift < drift_threshold:
-                if proposed_action != "NONE":
-                    return {
-                        "status": "REJECT",
-                        "reason": f"Drift {computed_drift} bps is below threshold {drift_threshold} bps, but proposed action is {proposed_action}.",
-                        "evidence_hash": evidence_hash,
-                        "proposal_id": proposal_id,
-                        "checks": {
-                            "payload_valid": True,
-                            "math_consistent": True,
-                            "direction_consistent": False,
-                            "spread_permitted": True,
-                            "circuit_breaker_passed": True,
-                            "market_state_permitted": True,
-                            "non_zero_portfolio": True,
-                        }
-                    }
-                else:
-                    return {
-                        "status": "ALLOW",
-                        "reason": "NO_ACTION verified: drift is within tolerance.",
-                        "evidence_hash": evidence_hash,
-                        "proposal_id": proposal_id,
-                        "checks": {
-                            "payload_valid": True,
-                            "math_consistent": True,
-                            "direction_consistent": True,
-                            "spread_permitted": True,
-                            "circuit_breaker_passed": True,
-                            "market_state_permitted": True,
-                            "non_zero_portfolio": True,
-                        }
-                    }
-
-            # 7. Direction consistency
-            expected_direction = "SELL_STOCK" if computed_stock_weight > target_stock_weight else "BUY_STOCK"
-            if proposed_action != expected_direction:
-                return {
-                    "status": "REJECT",
-                    "reason": f"Direction mismatch: portfolio requires {expected_direction} but proposal specifies {proposed_action}.",
-                    "evidence_hash": evidence_hash,
-                    "proposal_id": proposal_id,
-                    "checks": {
-                        "payload_valid": True,
-                        "math_consistent": True,
-                        "direction_consistent": False,
-                        "spread_permitted": True,
-                        "circuit_breaker_passed": True,
-                        "market_state_permitted": True,
-                        "non_zero_portfolio": True,
-                    }
-                }
-
-            # 8. Spread boundary check
-            if proposed_action == "BUY_STOCK" and spread_bps is not None and spread_bps > max_spread_bps:
-                return {
-                    "status": "REJECT",
-                    "reason": f"Spread {spread_bps} bps exceeds maximum allowable spread {max_spread_bps} bps for BUY_STOCK.",
-                    "evidence_hash": evidence_hash,
-                    "proposal_id": proposal_id,
-                    "checks": {
-                        "payload_valid": True,
-                        "math_consistent": True,
-                        "direction_consistent": True,
-                        "spread_permitted": False,
-                        "circuit_breaker_passed": True,
-                        "market_state_permitted": True,
-                        "non_zero_portfolio": True,
-                    }
-                }
-
-            # 9. Circuit breaker check
-            if proposed_trade_usd > max_single_trade_usd:
-                return {
-                    "status": "REJECT",
-                    "reason": f"Trade amount ${proposed_trade_usd:.2f} exceeds circuit breaker limit ${max_single_trade_usd:.2f}.",
-                    "evidence_hash": evidence_hash,
-                    "proposal_id": proposal_id,
-                    "checks": {
-                        "payload_valid": True,
-                        "math_consistent": True,
-                        "direction_consistent": True,
-                        "spread_permitted": True,
-                        "circuit_breaker_passed": False,
-                        "market_state_permitted": True,
-                        "non_zero_portfolio": True,
-                    }
-                }
-
-            # 10. LLM structured risk evaluation (agentic verification)
-            prompt = (
-                f"You are an independent DeFi risk auditor for an autonomous portfolio agent on BSC.\n"
-                f"Evaluate this proposed rebalance:\n"
-                f"- Strategy: Target Stock {target_stock_weight / 100}%, Actual Stock {computed_stock_weight / 100}%\n"
-                f"- Proposed Action: {proposed_action} of ${proposed_trade_usd:.2f} USD\n"
-                f"- Market Status: {market_state}\n"
-                f"- On-Chain Spread: {spread_bps} bps (limit: {max_spread_bps} bps)\n"
-                f"Confirm whether the proposal is consistent with safe portfolio management.\n"
-                f"Return JSON: {{\"approved\": true, \"risk_score\": 0, \"assessment\": \"brief explanation\"}}"
-            )
-            llm_res = gl.nondet.exec_prompt(prompt, response_format="json")
-
-            is_approved = True
-            if isinstance(llm_res, dict):
-                is_approved = bool(llm_res.get("approved", True))
-
-            if not is_approved:
-                assessment_text = str(llm_res.get("assessment", "High risk")) if isinstance(llm_res, dict) else "High risk"
-                return {
-                    "status": "REJECT",
-                    "reason": f"LLM risk auditor rejected proposal: {assessment_text}",
-                    "evidence_hash": evidence_hash,
-                    "proposal_id": proposal_id,
-                    "checks": {
-                        "payload_valid": True,
-                        "math_consistent": True,
-                        "direction_consistent": True,
-                        "spread_permitted": True,
-                        "circuit_breaker_passed": True,
-                        "market_state_permitted": True,
-                        "non_zero_portfolio": True,
-                    }
-                }
-
-            return {
-                "status": "ALLOW",
-                "reason": "Proposal successfully verified against all deterministic risk and allocation rules.",
-                "evidence_hash": evidence_hash,
-                "proposal_id": proposal_id,
-                "checks": {
-                    "payload_valid": True,
-                    "math_consistent": True,
-                    "direction_consistent": True,
-                    "spread_permitted": True,
-                    "circuit_breaker_passed": True,
-                    "market_state_permitted": True,
-                    "non_zero_portfolio": True,
-                }
-            }
+                if not isinstance(payload, dict) or not isinstance(submitted_evidence_hash, str):
+                    raise ValueError("payload/hash type")
+                proposal_id = payload["proposalId"]
+                if not isinstance(proposal_id, str) or not proposal_id:
+                    raise ValueError("proposal id")
+                if len(submitted_evidence_hash) != 66 or not submitted_evidence_hash.startswith("0x") or any(c not in "0123456789abcdefABCDEF" for c in submitted_evidence_hash[2:]):
+                    raise ValueError("evidence hash")
+                required = ["targetStockWeightBps", "stockBalanceRaw", "stableBalanceRaw", "stockBalanceFormatted", "stableBalanceFormatted", "stockTokenPrice", "stockReferencePrice", "marketState", "currentStockWeightBps", "calculatedDriftBps", "driftThresholdBps", "proposedAction", "proposedTradeAmountUsd", "maxSingleTradeUsd", "maxSpreadBps", "quoteAgeSeconds", "stockBalanceVerificationStatus", "stableBalanceVerificationStatus"]
+                if any(key not in payload for key in required):
+                    raise ValueError("missing payload field")
+                target = int(payload["targetStockWeightBps"])
+                stock_raw, stable_raw = int(payload["stockBalanceRaw"]), int(payload["stableBalanceRaw"])
+                stock_fmt, stable_fmt = float(payload["stockBalanceFormatted"]), float(payload["stableBalanceFormatted"])
+                price, reference = float(payload["stockTokenPrice"]), float(payload["stockReferencePrice"])
+                current, drift = int(payload["currentStockWeightBps"]), int(payload["calculatedDriftBps"])
+                threshold, max_spread = int(payload["driftThresholdBps"]), int(payload["maxSpreadBps"])
+                trade, max_trade = float(payload["proposedTradeAmountUsd"]), float(payload["maxSingleTradeUsd"])
+                age, action, market = int(payload["quoteAgeSeconds"]), payload["proposedAction"], payload["marketState"]
+                numeric_ok = all(math.isfinite(value) for value in [stock_fmt, stable_fmt, price, reference, trade, max_trade])
+                price_ok = numeric_ok and price > 0 and reference > 0
+                spread_bps = int(round(((price - reference) / reference) * 10000)) if price_ok else 999999
+                total = stock_fmt * price + stable_fmt
+                math_ok = total > 0 and math.isfinite(total)
+                computed_weight = int(round((stock_fmt * price / total) * 10000)) if math_ok else -1
+                computed_drift = abs(computed_weight - target) if math_ok else -1
+                direction_ok = (action == "NONE" and computed_drift < threshold) or (action == "SELL_STOCK" and computed_weight > target) or (action == "BUY_STOCK" and computed_weight < target)
+                trade_ok = (action == "NONE" and trade == 0) or (action != "NONE" and trade > 0)
+                checks = self._checks(payload_valid=True, balance_verified=(payload["stockBalanceVerificationStatus"] == "VERIFIED" and payload["stableBalanceVerificationStatus"] == "VERIFIED"), non_zero_portfolio=(stock_raw != 0 or stable_raw != 0), price_verified=price_ok, spread_verified=price_ok, freshness_passed=(age >= 0 and age <= 900), market_state_verified=(market == "MARKET_OPEN"), market_state_permitted=(market == "MARKET_OPEN"), math_consistent=(math_ok and abs(computed_weight - current) <= 2 and abs(computed_drift - drift) <= 2), allocation_drift_valid=(math_ok and abs(computed_weight - current) <= 2 and abs(computed_drift - drift) <= 2), direction_consistent=direction_ok, trade_direction_valid=direction_ok, spread_permitted=(action != "BUY_STOCK" or spread_bps <= max_spread), trade_amount_valid=trade_ok, circuit_breaker_passed=(trade <= max_trade), risk_limits_passed=(trade <= max_trade))
+                deterministic_ok = all(checks.values()) and action in ["BUY_STOCK", "SELL_STOCK", "NONE"]
+                if not deterministic_ok:
+                    return self._result("REJECT", "Deterministic evidence or risk check failed.", submitted_evidence_hash, proposal_id, checks)
+                llm_res = gl.nondet.exec_prompt("Return JSON only with exactly {approved: boolean, risk_score: number, assessment: string}. Approve only this deterministic rebalance evidence.", response_format="json")
+                if not isinstance(llm_res, dict) or set(llm_res.keys()) != {"approved", "risk_score", "assessment"} or type(llm_res["approved"]) is not bool or type(llm_res["risk_score"]) not in [int, float] or not math.isfinite(float(llm_res["risk_score"])) or type(llm_res["assessment"]) is not str:
+                    raise ValueError("malformed LLM schema")
+                if llm_res["approved"] is not True:
+                    return self._result("REJECT", "LLM risk auditor rejected proposal.", submitted_evidence_hash, proposal_id, checks)
+                return self._result("ALLOW", "Proposal verified against deterministic checks and consensus risk audit.", submitted_evidence_hash, proposal_id, checks)
+            except Exception as error:
+                return self._result("REJECT", ERROR_LLM + " malformed contract input or LLM output: " + str(error), submitted_evidence_hash if isinstance(submitted_evidence_hash, str) else "", proposal_id, self._checks())
 
         def validator_fn(leaders_res: gl.vm.Result) -> bool:
-            if not isinstance(leaders_res, gl.vm.Return):
-                return False
-            leader_data = leaders_res.calldata
-            if not isinstance(leader_data, dict):
+            if not isinstance(leaders_res, gl.vm.Return) or not isinstance(leaders_res.calldata, dict):
                 return False
             validator_data = leader_fn()
-            # Custom comparator: must agree on status and evidence_hash (NOT strict_eq on LLM assessment text)
-            if leader_data.get("status") != validator_data.get("status"):
-                return False
-            if leader_data.get("evidence_hash") != validator_data.get("evidence_hash"):
-                return False
-            return True
+            leader_data = leaders_res.calldata
+            return leader_data.get("status") == validator_data.get("status") and leader_data.get("evidence_hash") == validator_data.get("evidence_hash") and leader_data.get("checks") == validator_data.get("checks")
 
         verdict = gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
         if isinstance(verdict, dict) and verdict.get("status") == "ALLOW":

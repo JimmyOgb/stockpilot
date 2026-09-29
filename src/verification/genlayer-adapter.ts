@@ -60,15 +60,21 @@ export function buildCanonicalEvidencePayload(input: GenLayerVerificationInput):
     stableContractAddress: strategy.stableAddress,
     stockBalanceRaw: stockBalance.rawAmount,
     stockBalanceFormatted: stockBalance.formattedAmount,
+    stockBalanceVerificationStatus: stockBalance.verificationStatus,
     stableBalanceRaw: stableBalance.rawAmount,
     stableBalanceFormatted: stableBalance.formattedAmount,
+    stableBalanceVerificationStatus: stableBalance.verificationStatus,
     stockTokenPrice: marketData.stockTokenPrice,
     stockReferencePrice: marketData.stockReferencePrice,
-    spread: marketData.spread,
-    spreadBps: marketData.spreadBps,
+    spread: marketData.stockReferencePrice && marketData.stockReferencePrice > 0
+      ? (marketData.stockTokenPrice - marketData.stockReferencePrice) / marketData.stockReferencePrice
+      : null,
+    spreadBps: marketData.stockReferencePrice && marketData.stockReferencePrice > 0
+      ? Math.round(((marketData.stockTokenPrice - marketData.stockReferencePrice) / marketData.stockReferencePrice) * 10000)
+      : null,
     marketState: input.marketStatus.state,
     quoteTimestamp: marketData.quoteTimestamp,
-    quoteAgeSeconds: marketData.quoteAgeSeconds,
+    quoteAgeSeconds: Math.max(0, Math.floor((input.timestamp - marketData.quoteTimestamp) / 1000)),
     currentStockWeightBps: snapshot ? snapshot.currentStockWeightBps : 0,
     currentStableWeightBps: snapshot ? snapshot.currentStableWeightBps : 0,
     totalValueUsd: snapshot ? snapshot.totalValueUsd : 0,
@@ -104,6 +110,9 @@ export function computeEvidenceHash(payload: CanonicalEvidencePayload): string {
  * Returns failure reasons before dispatching to external validator.
  */
 export function validateEvidencePayload(payload: CanonicalEvidencePayload): { valid: boolean; reason?: string } {
+  if (payload.stockBalanceVerificationStatus !== 'VERIFIED' || payload.stableBalanceVerificationStatus !== 'VERIFIED') {
+    return { valid: false, reason: 'Balance reconciliation did not produce VERIFIED evidence.' };
+  }
   // 1. Zero/Empty Portfolio Check (Zero Mock Policy)
   if (
     (payload.stockBalanceRaw === '0' || payload.stockBalanceRaw === '0n') &&
@@ -132,7 +141,7 @@ export function validateEvidencePayload(payload: CanonicalEvidencePayload): { va
   }
 
   // 4. Quote freshness check
-  if (payload.quoteAgeSeconds > 900) {
+  if (!Number.isInteger(payload.quoteAgeSeconds) || payload.quoteAgeSeconds < 0 || payload.quoteAgeSeconds > 900) {
     return {
       valid: false,
       reason: `Quote age of ${payload.quoteAgeSeconds}s exceeds max allowable staleness of 900s.`
@@ -140,6 +149,16 @@ export function validateEvidencePayload(payload: CanonicalEvidencePayload): { va
   }
 
   // 5. Market session check
+  if (payload.stockReferencePrice === null || payload.stockReferencePrice <= 0 || payload.spreadBps === null) {
+    return { valid: false, reason: 'Price/reference price evidence is unavailable or invalid.' };
+  }
+
+  const derivedSpread = (payload.stockTokenPrice - payload.stockReferencePrice) / payload.stockReferencePrice;
+  const derivedSpreadBps = Math.round(derivedSpread * 10000);
+  if (Math.abs(derivedSpreadBps - payload.spreadBps) > 0 || Math.abs(derivedSpread - (payload.spread ?? NaN)) > 1e-12) {
+    return { valid: false, reason: 'Spread evidence does not match token/reference prices.' };
+  }
+
   if (payload.marketState === 'REFERENCE_STALE') {
     return {
       valid: false,
@@ -336,34 +355,20 @@ export class GenLayerVerificationAdapter implements IVerificationAdapter {
           spread_permitted: false,
           circuit_breaker_passed: false,
           market_state_permitted: false,
-          non_zero_portfolio: false
+          non_zero_portfolio: false,
+          freshness_passed: false,
+          balance_verified: false,
+          price_verified: false,
+          spread_verified: false,
+          market_state_verified: false,
+          allocation_drift_valid: false,
+          trade_direction_valid: false,
+          trade_amount_valid: false,
+          risk_limits_passed: false
         }
       };
       this.recordAudit(rejectResult, canonicalPayload);
       return rejectResult;
-    }
-
-    // If NO_ACTION proposal was confirmed valid locally
-    if (canonicalPayload.proposedAction === 'NONE') {
-      const allowNoActionResult: VerificationResult = {
-        status: 'ALLOW',
-        decision: 'VERIFIED',
-        evidenceHash,
-        proposalId,
-        reason: 'NO_ACTION verified: portfolio is within configured drift tolerance.',
-        verifiedAt,
-        checks: {
-          payload_valid: true,
-          math_consistent: true,
-          direction_consistent: true,
-          spread_permitted: true,
-          circuit_breaker_passed: true,
-          market_state_permitted: true,
-          non_zero_portfolio: true
-        }
-      };
-      this.recordAudit(allowNoActionResult, canonicalPayload);
-      return allowNoActionResult;
     }
 
     // 4. Contract Address Check
@@ -395,7 +400,7 @@ export class GenLayerVerificationAdapter implements IVerificationAdapter {
             to: contractAddress,
             data: {
               method: 'verify_proposal',
-              args: [JSON.stringify(canonicalPayload)]
+              args: [JSON.stringify(canonicalPayload), evidenceHash]
             }
           },
           'latest'
@@ -489,6 +494,14 @@ export class GenLayerVerificationAdapter implements IVerificationAdapter {
 
     const res = rawResult as Partial<GenLayerContractResponse>;
 
+    // A write is authoritative only after the node reports finalized consensus.
+    if (res.finalized !== true || res.consensus_status !== 'FINALIZED') {
+      return {
+        status: 'REJECT', decision: 'NOT_VERIFIED', evidenceHash: expectedHash, proposalId,
+        reason: `GenLayer result is not finalized (finalized=${String(res.finalized)}, consensus_status=${String(res.consensus_status)}).`, verifiedAt
+      };
+    }
+
     // Schema field checks
     if (!res.status || (res.status !== 'ALLOW' && res.status !== 'REJECT')) {
       return {
@@ -501,8 +514,7 @@ export class GenLayerVerificationAdapter implements IVerificationAdapter {
       };
     }
 
-    // Evidence hash tamper check
-    if (res.evidence_hash && res.evidence_hash !== expectedHash) {
+    if (res.evidence_hash !== expectedHash) {
       return {
         status: 'REJECT',
         decision: 'NOT_VERIFIED',
@@ -513,16 +525,27 @@ export class GenLayerVerificationAdapter implements IVerificationAdapter {
       };
     }
 
-    const checks: GenLayerRuleChecks = res.checks || {
-      payload_valid: true,
-      math_consistent: true,
-      direction_consistent: true,
-      spread_permitted: true,
-      circuit_breaker_passed: true,
-      market_state_permitted: true,
-      non_zero_portfolio: true
-    };
+    const requiredChecks: Array<keyof GenLayerRuleChecks> = [
+      'payload_valid', 'math_consistent', 'direction_consistent', 'spread_permitted',
+      'circuit_breaker_passed', 'market_state_permitted', 'non_zero_portfolio',
+      'freshness_passed', 'balance_verified', 'price_verified', 'spread_verified',
+      'market_state_verified', 'allocation_drift_valid', 'trade_direction_valid',
+      'trade_amount_valid', 'risk_limits_passed'
+    ];
+    if (!res.checks || requiredChecks.some((key) => typeof res.checks?.[key] !== 'boolean')) {
+      return { status: 'REJECT', decision: 'NOT_VERIFIED', evidenceHash: expectedHash, proposalId,
+        reason: 'Malformed GenLayer response: complete safety checks are required.', verifiedAt };
+    }
+    if (res.proposal_id !== proposalId || typeof res.reason !== 'string' || res.reason.trim() === '') {
+      return { status: 'REJECT', decision: 'NOT_VERIFIED', evidenceHash: expectedHash, proposalId,
+        reason: 'Malformed GenLayer response: proposal_id and non-empty reason are required.', verifiedAt };
+    }
+    const checks = res.checks as GenLayerRuleChecks;
 
+    if (res.status === 'ALLOW' && requiredChecks.some((key) => checks[key] !== true)) {
+      return { status: 'REJECT', decision: 'NOT_VERIFIED', evidenceHash: expectedHash, proposalId,
+        reason: 'GenLayer ALLOW response contains a failed safety check.', verifiedAt, checks };
+    }
     if (res.status === 'ALLOW') {
       return {
         status: 'ALLOW',

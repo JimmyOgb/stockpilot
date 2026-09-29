@@ -21,7 +21,8 @@ import {
 import {
   buildCanonicalEvidencePayload,
   computeEvidenceHash,
-  validateEvidencePayload
+  validateEvidencePayload,
+  GenLayerVerificationAdapter
 } from '../verification/genlayer-adapter.js';
 import {
   isValidEvmAddress,
@@ -30,6 +31,7 @@ import {
   BinanceWalletBalanceClient
 } from '../binance/wallet-balance-client.js';
 import { BinanceRequestSigner } from '../binance/request-signer.js';
+import { BinanceRwaClient } from '../binance/rwa-client.js';
 import { WalletPortfolioResponse, ConnectedTokenBalance } from '../types/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -222,10 +224,31 @@ app.post(['/api/strategy/evaluate', '/strategy/evaluate'], (req: Request, res: R
  * Market Telemetry & Static Asset Endpoint
  * GET /api/market/telemetry
  */
-app.get(['/api/market/telemetry', '/market/telemetry'], (req: Request, res: Response) => {
+app.get(['/api/market/telemetry', '/market/telemetry'], async (req: Request, res: Response) => {
   const now = Date.now();
-  const quoteAgeSeconds = Math.max(0, Math.floor((now - lastReferenceQuoteTimestamp) / 1000));
-  const isFresh = quoteAgeSeconds <= maxStalenessSeconds;
+  let livePrice: { tokenPrice: number; referencePrice: number; spread: number | null; tokenPriceUpdatedAt: number } | null = null;
+  let liveMarket: { status: string } | null = null;
+  try {
+    const apiKey = process.env.BINANCE_WEB3_API_KEY;
+    const apiSecret = process.env.BINANCE_WEB3_API_SECRET;
+    if (apiKey && apiSecret) {
+      const rwa = new BinanceRwaClient({ signer: new BinanceRequestSigner({ apiKey, apiSecret }), baseUrl: process.env.BINANCE_WEB3_API_BASE_URL });
+      const address = process.env.TOKENIZED_STOCK_ADDRESS || '0x02fca66c1d1afb4e2a7884261eb00f63598a7436';
+      const [price, market] = await Promise.all([
+        rwa.getRwaPriceAndSpread({ tokenContractAddresses: address, binanceChainId: '56' }),
+        rwa.getUnderlyingMarketStatus({ tokenContractAddress: address, binanceChainId: '56' })
+      ]);
+      livePrice = price.status === 'LIVE' ? price.data?.[0] ?? null : null;
+      liveMarket = market.status === 'LIVE' && market.data ? market.data : null;
+      if (livePrice) lastReferenceQuoteTimestamp = livePrice.tokenPriceUpdatedAt;
+    }
+  } catch {
+    livePrice = null;
+    liveMarket = null;
+  }
+  const quoteTimestamp = livePrice?.tokenPriceUpdatedAt ?? lastReferenceQuoteTimestamp;
+  const quoteAgeSeconds = Math.max(0, Math.floor((now - quoteTimestamp) / 1000));
+  const isFresh = Boolean(livePrice && quoteAgeSeconds <= maxStalenessSeconds);
 
   res.json({
     success: true,
@@ -257,10 +280,14 @@ app.get(['/api/market/telemetry', '/market/telemetry'], (req: Request, res: Resp
       binanceChainId: '56'
     },
     referenceQuote: {
-      lastTimestamp: lastReferenceQuoteTimestamp,
+      lastTimestamp: quoteTimestamp,
       ageSeconds: quoteAgeSeconds,
       maxAllowedAgeSeconds: maxStalenessSeconds,
-      isFresh
+      isFresh,
+      tokenPrice: livePrice?.tokenPrice ?? null,
+      referencePrice: livePrice?.referencePrice ?? null,
+      spread: livePrice?.spread ?? null,
+      marketStatus: liveMarket?.status ?? 'UNAVAILABLE'
     },
     policies: {
       maxSpreadBps: 200,
@@ -269,7 +296,7 @@ app.get(['/api/market/telemetry', '/market/telemetry'], (req: Request, res: Resp
       maxSingleTradeUsd: parseInt(process.env.MAX_SINGLE_REBALANCE_USD || '5000', 10),
       tinyExecutionCapUsd: 25
     },
-    liveTelemetryStatus: process.env.BINANCE_WEB3_API_KEY ? 'CONNECTED' : 'UNAVAILABLE'
+    liveTelemetryStatus: livePrice && liveMarket ? 'CONNECTED' : 'UNAVAILABLE'
   });
 });
 
@@ -278,71 +305,65 @@ app.get(['/api/market/telemetry', '/market/telemetry'], (req: Request, res: Resp
  * POST /api/verification/inspect
  * Computes canonical evidence payload and deterministic SHA-256 hash
  */
-app.post(['/api/verification/inspect', '/verification/inspect'], (req: Request, res: Response) => {
-  const { strategy, balances, marketData, proposal, snapshot } = req.body;
-
-  if (!strategy || !balances || !proposal) {
-    res.status(400).json({ error: 'Missing strategy, balances, or proposal.' });
+app.post(['/api/verification/inspect', '/verification/inspect'], async (req: Request, res: Response) => {
+  const { strategy, walletAddress } = req.body;
+  if (!strategy || typeof walletAddress !== 'string' || !isValidEvmAddress(walletAddress)) {
+    res.status(400).json({ error: 'A valid walletAddress and strategy are required. Evidence must be loaded from live sources.' });
+    return;
+  }
+  const apiKey = process.env.BINANCE_WEB3_API_KEY;
+  const apiSecret = process.env.BINANCE_WEB3_API_SECRET;
+  if (!apiKey || !apiSecret) {
+    res.status(503).json({ success: false, error: 'Live Binance credentials are unavailable; verification is blocked.' });
     return;
   }
 
-  const now = Date.now();
-  const qTimestamp = typeof marketData?.quoteTimestamp === 'number' ? marketData.quoteTimestamp : lastReferenceQuoteTimestamp;
-  const quoteAgeSeconds = Math.max(0, Math.floor((now - qTimestamp) / 1000));
-
-  const canonicalPayload = buildCanonicalEvidencePayload({
-    strategy,
-    balances: {
-      stock: {
-        symbol: balances.stock?.symbol || strategy.stockSymbol,
-        contractAddress: balances.stock?.address || strategy.stockAddress,
-        rawAmount: balances.stock?.amountRaw?.toString() || '0',
-        formattedAmount: balances.stock?.amountFormatted ?? 0,
-        verificationStatus: 'VERIFIED'
-      },
-      stable: {
-        symbol: balances.stable?.symbol || strategy.stableSymbol,
-        contractAddress: balances.stable?.address || strategy.stableAddress,
-        rawAmount: balances.stable?.amountRaw?.toString() || '0',
-        formattedAmount: balances.stable?.amountFormatted ?? 0,
-        verificationStatus: 'VERIFIED'
-      }
-    },
-    marketData: {
-      stockTokenPrice: marketData?.stockTokenPrice ?? 0,
-      stockReferencePrice: marketData?.stockReferencePrice ?? null,
-      spread: marketData?.spread ?? null,
-      spreadBps: marketData?.spreadBps ?? null,
-      quoteTimestamp: qTimestamp,
-      quoteAgeSeconds
-    },
-    marketStatus: {
-      state: evaluateMarketState({
-        referenceTimestamp: qTimestamp,
-        currentTimestamp: now,
-        maxStalenessSeconds
-      })
-    },
-    snapshot: snapshot || null,
-    proposal,
-    riskChecks: {
-      maxSpreadBps: strategy.maxSpreadBps ?? 200,
-      maxSingleTradeUsd: strategy.maxSingleTradeUsd,
-      isSpreadExcessive: false,
-      isCircuitBreakerTripped: proposal.tradeAmountUsd > strategy.maxSingleTradeUsd
-    },
-    timestamp: now
-  });
-
-  const evidenceHash = computeEvidenceHash(canonicalPayload);
-  const validation = validateEvidencePayload(canonicalPayload);
-
-  res.json({
-    success: true,
-    canonicalPayload,
-    evidenceHash,
-    validation
-  });
+  try {
+    const stockAddress = strategy.stockAddress || process.env.TOKENIZED_STOCK_ADDRESS || '0x02fca66c1d1afb4e2a7884261eb00f63598a7436';
+    const stableAddress = strategy.stableAddress || process.env.STABLECOIN_ADDRESS || '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d';
+    const signer = new BinanceRequestSigner({ apiKey, apiSecret });
+    const walletClient = new BinanceWalletBalanceClient({ signer, bscRpcUrl: process.env.BSC_RPC_URL });
+    const rwaClient = new BinanceRwaClient({ signer, baseUrl: process.env.BINANCE_WEB3_API_BASE_URL });
+    const [walletResult, priceResult, marketResult] = await Promise.all([
+      walletClient.getVerifiedWalletBalances({ walletAddress, tokens: [
+        { tokenContractAddress: stockAddress, symbol: strategy.stockSymbol, decimals: 18, binanceChainId: '56' },
+        { tokenContractAddress: stableAddress, symbol: strategy.stableSymbol, decimals: 18, binanceChainId: '56' }
+      ] }),
+      rwaClient.getRwaPriceAndSpread({ tokenContractAddresses: stockAddress, binanceChainId: '56' }),
+      rwaClient.getUnderlyingMarketStatus({ tokenContractAddress: stockAddress, binanceChainId: '56' })
+    ]);
+    const stockLive = walletResult.balances.find((balance) => balance.tokenContractAddress.toLowerCase() === stockAddress.toLowerCase());
+    const stableLive = walletResult.balances.find((balance) => balance.tokenContractAddress.toLowerCase() === stableAddress.toLowerCase());
+    const priceLive = priceResult.status === 'LIVE' ? priceResult.data?.[0] : null;
+    const marketLive = marketResult.status === 'LIVE' ? marketResult.data : null;
+    if (!stockLive || !stableLive || !priceLive || !marketLive || walletResult.overallStatus !== 'VERIFIED' || stockLive.verificationStatus !== 'VERIFIED' || stableLive.verificationStatus !== 'VERIFIED') {
+      res.status(503).json({ success: false, error: 'Live balance, price, or market evidence is unavailable or failed independent verification.' });
+      return;
+    }
+    const now = Date.now();
+    const quoteTimestamp = priceLive.tokenPriceUpdatedAt;
+    const quoteAgeSeconds = Math.max(0, Math.floor((now - quoteTimestamp) / 1000));
+    const marketState = marketLive.status === 'OPEN' ? 'MARKET_OPEN' : marketLive.status === 'CLOSED' || marketLive.status === 'PAUSED' || marketLive.status === 'HALTED' ? 'MARKET_CLOSED' : 'REFERENCE_STALE';
+    const stockBalance: PortfolioBalance = { symbol: strategy.stockSymbol, address: stockAddress, amountRaw: stockLive.verifiedRawBalance!, decimals: 18, amountFormatted: Number(stockLive.verifiedFormattedBalance), priceUsd: priceLive.tokenPrice, valueUsd: Number(stockLive.verifiedFormattedBalance) * priceLive.tokenPrice };
+    const stableBalance: PortfolioBalance = { symbol: strategy.stableSymbol, address: stableAddress, amountRaw: stableLive.verifiedRawBalance!, decimals: 18, amountFormatted: Number(stableLive.verifiedFormattedBalance), priceUsd: 1, valueUsd: Number(stableLive.verifiedFormattedBalance) };
+    const portfolioSnapshot = calculatePortfolioSnapshot(stockBalance, stableBalance, quoteTimestamp, now);
+    const proposal = generateRebalanceProposal({ snapshot: portfolioSnapshot, strategy, marketState, maxSlippageOpenBps: parseInt(process.env.MAX_SLIPPAGE_BPS || '50', 10), maxSlippageClosedBps: parseInt(process.env.MAX_SLIPPAGE_CLOSED_BPS || '25', 10) });
+    const verificationInput = {
+      strategy,
+      balances: { stock: { symbol: strategy.stockSymbol, contractAddress: stockAddress, rawAmount: stockLive.verifiedRawBalance!.toString(), formattedAmount: Number(stockLive.verifiedFormattedBalance), verificationStatus: stockLive.verificationStatus }, stable: { symbol: strategy.stableSymbol, contractAddress: stableAddress, rawAmount: stableLive.verifiedRawBalance!.toString(), formattedAmount: Number(stableLive.verifiedFormattedBalance), verificationStatus: stableLive.verificationStatus } },
+      marketData: { stockTokenPrice: priceLive.tokenPrice, stockReferencePrice: priceLive.referencePrice, spread: priceLive.spread, spreadBps: Math.round((priceLive.tokenPrice - priceLive.referencePrice) / priceLive.referencePrice * 10000), quoteTimestamp, quoteAgeSeconds },
+      marketStatus: { state: marketState, rawStatus: marketLive.rawMarketStatus, openState: marketLive.openState, updatedAt: marketLive.updatedAt }, snapshot: portfolioSnapshot, proposal,
+      riskChecks: { maxSpreadBps: strategy.maxSpreadBps ?? 200, maxSingleTradeUsd: strategy.maxSingleTradeUsd, isSpreadExcessive: false, isCircuitBreakerTripped: proposal.tradeAmountUsd > strategy.maxSingleTradeUsd }, timestamp: now
+    } as const;
+    const canonicalPayload = buildCanonicalEvidencePayload(verificationInput);
+    const evidenceHash = computeEvidenceHash(canonicalPayload);
+    const validation = validateEvidencePayload(canonicalPayload);
+    const verifier = new GenLayerVerificationAdapter();
+    const verificationResult = validation.valid ? await verifier.verifyProposal(verificationInput) : { status: 'REJECT', decision: 'NOT_VERIFIED', evidenceHash, proposalId: canonicalPayload.proposalId, reason: validation.reason || 'Live evidence validation failed.', verifiedAt: now } as const;
+    res.json({ success: true, canonicalPayload, evidenceHash, validation, verificationResult, simulationEligible: verificationResult.decision === 'VERIFIED' && verificationResult.status === 'ALLOW', executionEligible: false });
+  } catch {
+    res.status(503).json({ success: false, error: 'Live evidence acquisition failed; verification is blocked.' });
+  }
 });
 
 /**
@@ -374,7 +395,7 @@ async function handleWalletBalances(rawAddress: unknown, res: Response) {
       name: 'Tokenized NVIDIA (bStocks)',
       contractAddress: stockContract,
       decimals: 18,
-      priceUsd: 140.0
+      priceUsd: 0
     },
     {
       symbol: process.env.STABLECOIN_SYMBOL || 'USDC',

@@ -197,6 +197,8 @@ export interface CanonicalEvidencePayload {
   stockBalanceFormatted: number;
   stableBalanceRaw: string;
   stableBalanceFormatted: number;
+  stockBalanceVerificationStatus: string;
+  stableBalanceVerificationStatus: string;
   stockTokenPrice: number;
   stockReferencePrice: number | null;
   spread: number | null;
@@ -225,11 +227,21 @@ export interface GenLayerRuleChecks {
   circuit_breaker_passed: boolean;
   market_state_permitted: boolean;
   non_zero_portfolio: boolean;
-  freshness_passed?: boolean;
+  freshness_passed: boolean;
+  balance_verified: boolean;
+  price_verified: boolean;
+  spread_verified: boolean;
+  market_state_verified: boolean;
+  allocation_drift_valid: boolean;
+  trade_direction_valid: boolean;
+  trade_amount_valid: boolean;
+  risk_limits_passed: boolean;
 }
 
 export interface GenLayerContractResponse {
   status: 'ALLOW' | 'REJECT';
+  finalized: boolean;
+  consensus_status: 'FINALIZED' | 'PENDING' | 'NO_MAJORITY' | 'ERROR';
   reason: string;
   evidence_hash: string;
   proposal_id: string;
@@ -585,4 +597,3 @@ export interface BinanceSimulationAuditRecord {
 }
 
 export * from './wallet.js';
-

@@ -111,6 +111,7 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
     canonicalPayload: CanonicalEvidencePayload;
     evidenceHash: string;
     validation: { valid: boolean; reason?: string };
+    verificationResult?: { decision: string; status: string; reason: string };
   } | null>(null);
 
   // User Approval State
@@ -240,7 +241,8 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
         amountRaw: stockRaw.toString(),
         decimals: 18,
         amountFormatted: stockBalanceItem ? parseFloat(stockBalanceItem.formattedBalance) || 0 : 0,
-        priceUsd: stockBalanceItem?.priceUsd || 140.0,
+        verificationStatus: stockBalanceItem?.verificationStatus || 'UNAVAILABLE',
+        priceUsd: stockBalanceItem?.priceUsd || 0,
         valueUsd: stockBalanceItem?.valueUsd || 0
       };
 
@@ -250,6 +252,7 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
         amountRaw: stableRaw.toString(),
         decimals: 18,
         amountFormatted: stableBalanceItem ? parseFloat(stableBalanceItem.formattedBalance) || 0 : 0,
+        verificationStatus: stableBalanceItem?.verificationStatus || 'UNAVAILABLE',
         priceUsd: stableBalanceItem?.priceUsd || 1.0,
         valueUsd: stableBalanceItem?.valueUsd || 0
       };
@@ -284,7 +287,7 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
     }
   };
 
-  // Inspect Verification with deterministic off-chain GenLayer proof
+  // Submit the live evidence packet to the server's GenLayer consensus boundary.
   const inspectVerification = async (
     strat: StrategyConfig,
     stockBal: any,
@@ -297,19 +300,7 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
       const res = await fetch('/api/verification/inspect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          strategy: strat,
-          balances: { stock: stockBal, stable: stableBal },
-          marketData: {
-            stockTokenPrice: stockBal.priceUsd || 140,
-            stockReferencePrice: 140,
-            spread: 0,
-            spreadBps: 0,
-            quoteTimestamp: snap.quoteTimestamp
-          },
-          proposal: prop,
-          snapshot: snap
-        })
+        body: JSON.stringify({ strategy: strat, walletAddress: wallet.address })
       });
       const data = await res.json();
       if (data.success) {
@@ -375,8 +366,8 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
       index: '03',
       title: 'GENLAYER',
       subtitle: 'Intelligent Contract Consensus',
-      status: verificationData?.validation?.valid ? 'VERIFIED' : 'AVAILABLE',
-      badge: verificationData?.validation?.valid ? 'VERIFIED' : 'AVAILABLE',
+      status: verificationData?.verificationResult?.decision === 'VERIFIED' ? 'VERIFIED' : 'NOT_VERIFIED',
+      badge: verificationData?.verificationResult?.decision === 'VERIFIED' ? 'VERIFIED' : 'NOT_VERIFIED',
       description:
         'Independent validator executes contracts/rebalance_verifier.py. Compares sorted-key canonical SHA-256 hash across 7 invariants.'
     },
@@ -1543,10 +1534,10 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
                 <span className="text-[10px] text-slate-500">Sorted Keys Deterministic</span>
               </div>
               <div className="text-white font-mono break-all text-xs p-2 rounded bg-slate-900 border border-slate-800">
-                {verificationData?.evidenceHash || '0x4f82a9c1e7d3b5a8e2f1c4a7d9e2b4f6a8c0e2d4b6a8f0c2e4a6d8b0e2f4a6c8'}
+                {verificationData?.evidenceHash || 'NO CONSENSUS RESULT'}
               </div>
               <div className="text-[11px] text-slate-400 pt-1">
-                Validation: {verificationData?.validation?.valid ? 'VALIDATED (7 Invariants Passed)' : 'READY FOR VERIFICATION'}
+                Consensus: {verificationData?.verificationResult?.decision === 'VERIFIED' ? 'FINALIZED / ACCEPTED' : 'NOT_VERIFIED'}
               </div>
             </div>
 

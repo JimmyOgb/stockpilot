@@ -38,6 +38,11 @@ import {
 describe('Independent GenLayer Verification Adapter', () => {
   const dummyContractAddress = '0x1234567890123456789012345678901234567890';
   const now = 1727250000000;
+  const completeChecks = {
+    freshness_passed: true, balance_verified: true, price_verified: true, spread_verified: true,
+    market_state_verified: true, allocation_drift_valid: true, trade_direction_valid: true,
+    trade_amount_valid: true, risk_limits_passed: true
+  };
 
   // Base snapshot: 50 NVDAB ($10,000, 50%) + 10,000 USDC ($10,000, 50%) = $20,000 Total
   // Target: 60% stock ($12,000) / 40% stable ($8,000). Drift: 1000 bps (Underweight stock -> BUY_STOCK $2,000)
@@ -213,6 +218,8 @@ describe('Independent GenLayer Verification Adapter', () => {
             jsonrpc: '2.0',
             id: 1,
             result: {
+              finalized: true,
+              consensus_status: 'FINALIZED',
               status: 'ALLOW',
               reason: 'Proposal verified by GenLayer consensus.',
               evidence_hash: expectedHash,
@@ -224,7 +231,8 @@ describe('Independent GenLayer Verification Adapter', () => {
                 spread_permitted: true,
                 circuit_breaker_passed: true,
                 market_state_permitted: true,
-                non_zero_portfolio: true
+                non_zero_portfolio: true,
+                ...completeChecks
               }
             }
           }),
@@ -256,6 +264,8 @@ describe('Independent GenLayer Verification Adapter', () => {
             jsonrpc: '2.0',
             id: 1,
             result: {
+              finalized: true,
+              consensus_status: 'FINALIZED',
               status: 'ALLOW',
               reason: 'Proposal verified by GenLayer consensus.',
               evidence_hash: expectedHash,
@@ -267,7 +277,8 @@ describe('Independent GenLayer Verification Adapter', () => {
                 spread_permitted: true,
                 circuit_breaker_passed: true,
                 market_state_permitted: true,
-                non_zero_portfolio: true
+                non_zero_portfolio: true,
+                ...completeChecks
               }
             }
           }),
@@ -350,8 +361,14 @@ describe('Independent GenLayer Verification Adapter', () => {
         }
       };
 
+      const canonical = buildCanonicalEvidencePayload(noActionInput);
       const adapter = new GenLayerVerificationAdapter({
-        verifierContractAddress: dummyContractAddress
+        verifierContractAddress: dummyContractAddress,
+        fetchFn: async () => new Response(JSON.stringify({ result: {
+          finalized: true, consensus_status: 'FINALIZED', status: 'ALLOW', reason: 'NO_ACTION verified',
+          evidence_hash: computeEvidenceHash(canonical), proposal_id: canonical.proposalId,
+          checks: { payload_valid: true, math_consistent: true, direction_consistent: true, spread_permitted: true, circuit_breaker_passed: true, market_state_permitted: true, non_zero_portfolio: true, ...completeChecks }
+        } }))
       });
 
       const result = await adapter.verifyProposal(noActionInput);
@@ -411,9 +428,11 @@ describe('Independent GenLayer Verification Adapter', () => {
         ...validBuyInput,
         marketData: {
           ...validBuyInput.marketData,
+          stockTokenPrice: 208,
           spread: 0.04, // 4.0%
           spreadBps: 400 // Exceeds maxSpreadBps 200 (2.0%)
-        }
+        },
+        snapshot: { ...underweightSnapshot, currentStockWeightBps: 5098 }
       };
 
       const adapter = new GenLayerVerificationAdapter({
@@ -504,7 +523,7 @@ describe('Independent GenLayer Verification Adapter', () => {
         ...validBuyInput,
         marketData: {
           ...validBuyInput.marketData,
-          quoteAgeSeconds: 901
+          quoteTimestamp: now - 901000
         }
       };
 
@@ -571,6 +590,8 @@ describe('Independent GenLayer Verification Adapter', () => {
             jsonrpc: '2.0',
             id: 1,
             result: {
+              finalized: true,
+              consensus_status: 'FINALIZED',
               status: 'ALLOW',
               evidence_hash: '0x0000000000000000000000000000000000000000000000000000000000000000' // Tampered!
             }
@@ -664,10 +685,13 @@ describe('Independent GenLayer Verification Adapter', () => {
             jsonrpc: '2.0',
             id: 1,
             result: {
+              finalized: true,
+              consensus_status: 'FINALIZED',
               status: 'REJECT',
               reason: 'Validator consensus rejected: spread exceeds custom dynamic oracle boundary.',
               evidence_hash: expectedHash,
-              proposal_id: canonicalPayload.proposalId
+              proposal_id: canonicalPayload.proposalId,
+              checks: { payload_valid: true, math_consistent: true, direction_consistent: true, spread_permitted: true, circuit_breaker_passed: true, market_state_permitted: true, non_zero_portfolio: true, ...completeChecks }
             }
           }),
           { status: 200, headers: { 'Content-Type': 'application/json' } }
@@ -698,10 +722,13 @@ describe('Independent GenLayer Verification Adapter', () => {
             jsonrpc: '2.0',
             id: 1,
             result: {
+              finalized: true,
+              consensus_status: 'FINALIZED',
               status: 'ALLOW',
               reason: 'Proposal verified by GenLayer consensus.',
               evidence_hash: expectedHash,
-              proposal_id: canonicalPayload.proposalId
+              proposal_id: canonicalPayload.proposalId,
+              checks: { payload_valid: true, math_consistent: true, direction_consistent: true, spread_permitted: true, circuit_breaker_passed: true, market_state_permitted: true, non_zero_portfolio: true, ...completeChecks }
             }
           }),
           { status: 200, headers: { 'Content-Type': 'application/json' } }
