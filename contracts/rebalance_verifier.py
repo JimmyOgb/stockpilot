@@ -1,4 +1,5 @@
-# { "Depends": "py-genlayer:5jycge4q8k23462jtb0b9fyey1s9qz928sz2nbrd9mg4sxqg2qng" }
+# v0.2.16
+# { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
 
 import genlayer as gl
 from genlayer import *
@@ -8,12 +9,12 @@ import math
 ERROR_LLM = "[LLM_ERROR]"
 
 
-class RebalanceVerifier:
+class RebalanceVerifier(gl.Contract):
     owner: Address
     verification_count: u256
 
     def __init__(self):
-        self.owner = gl.message.sender_account
+        self.owner = gl.message.sender_address
         self.verification_count = 0
 
     @gl.public.view
