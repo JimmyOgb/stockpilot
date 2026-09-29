@@ -1,0 +1,5 @@
+scratch/
+.env
+.env.*
+dist/
+node_modules/
