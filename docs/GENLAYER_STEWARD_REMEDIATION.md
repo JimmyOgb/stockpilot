@@ -48,3 +48,12 @@ The integration tests use deterministic doubles only at the external GenLayer/Bi
 ## Deployment configuration status
 
 The checked local `.env` and the linked Vercel Production environment do not expose a non-zero `GENLAYER_VERIFIER_CONTRACT` value. The application therefore fails closed until the exact deployed `RebalanceVerifier` address and Binance credentials are configured in Vercel. No address is invented here and no live consensus is claimed.
+
+## Release record
+
+- GitHub remediation commit: `6b97656` (`fix: connect app verification to GenLayer consensus`).
+- Deployment-only Vercel commit: `02f2c6f` (`chore: exclude local artifacts from Vercel upload`).
+- Vercel production deployment: `dpl_7ZFwEtf9BLLawchhp7GY6L93Bm9t`.
+- Production aliases: `https://stockpilot-eight-sepia.vercel.app` and `https://stockpilot-jamism123.vercel.app`.
+- Deployment status: Ready.
+- Live verification status: fail-closed/unavailable because Production has no Binance credentials and no non-zero GenLayer verifier contract address configured.
