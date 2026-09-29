@@ -57,3 +57,5 @@ The checked local `.env` and the linked Vercel Production environment do not exp
 - Production aliases: `https://stockpilot-eight-sepia.vercel.app` and `https://stockpilot-jamism123.vercel.app`.
 - Deployment status: Ready.
 - Live verification status: fail-closed/unavailable because Production has no Binance credentials and no non-zero GenLayer verifier contract address configured.
+- Final hash-gated commit: `9eebec8` (`fix: enforce server verdict hash equality`).
+- Final deployment: `dpl_4P8hCe47NaRX9tJ7bgcgWLfKC9ps` (Ready; aliases unchanged).
