@@ -16,7 +16,8 @@ import {
 import {
   SystemHealthStatus,
   StrategyConfig,
-  PortfolioBalance
+  PortfolioBalance,
+  VerificationResult
 } from '../types/index.js';
 import {
   buildCanonicalEvidencePayload,
@@ -306,7 +307,7 @@ app.get(['/api/market/telemetry', '/market/telemetry'], async (req: Request, res
  * Computes canonical evidence payload and deterministic SHA-256 hash
  */
 app.post(['/api/verification/inspect', '/verification/inspect'], async (req: Request, res: Response) => {
-  const { strategy, walletAddress } = req.body;
+  const { strategy, walletAddress, transactionId } = req.body;
   if (!strategy || typeof walletAddress !== 'string' || !isValidEvmAddress(walletAddress)) {
     res.status(400).json({ error: 'A valid walletAddress and strategy are required. Evidence must be loaded from live sources.' });
     return;
@@ -314,7 +315,7 @@ app.post(['/api/verification/inspect', '/verification/inspect'], async (req: Req
   const apiKey = process.env.BINANCE_WEB3_API_KEY;
   const apiSecret = process.env.BINANCE_WEB3_API_SECRET;
   if (!apiKey || !apiSecret) {
-    res.status(503).json({ success: false, error: 'Live Binance credentials are unavailable; verification is blocked.' });
+    res.status(503).json({ success: false, inspectStatus: 'UNAVAILABLE', error: 'Live Binance credentials are unavailable; verification is blocked.' });
     return;
   }
 
@@ -337,7 +338,7 @@ app.post(['/api/verification/inspect', '/verification/inspect'], async (req: Req
     const priceLive = priceResult.status === 'LIVE' ? priceResult.data?.[0] : null;
     const marketLive = marketResult.status === 'LIVE' ? marketResult.data : null;
     if (!stockLive || !stableLive || !priceLive || !marketLive || walletResult.overallStatus !== 'VERIFIED' || stockLive.verificationStatus !== 'VERIFIED' || stableLive.verificationStatus !== 'VERIFIED') {
-      res.status(503).json({ success: false, error: 'Live balance, price, or market evidence is unavailable or failed independent verification.' });
+      res.status(503).json({ success: false, inspectStatus: 'UNAVAILABLE', error: 'Live balance, price, or market evidence is unavailable or failed independent verification.' });
       return;
     }
     const now = Date.now();
@@ -359,13 +360,26 @@ app.post(['/api/verification/inspect', '/verification/inspect'], async (req: Req
     const evidenceHash = computeEvidenceHash(canonicalPayload);
     const validation = validateEvidencePayload(canonicalPayload);
     const verifier = new GenLayerVerificationAdapter();
-    let verificationResult = validation.valid ? await verifier.verifyProposal(verificationInput) : { status: 'REJECT', decision: 'NOT_VERIFIED', evidenceHash, proposalId: canonicalPayload.proposalId, reason: validation.reason || 'Live evidence validation failed.', verifiedAt: now } as const;
+    let verificationResult: VerificationResult = validation.valid
+      ? await verifier.verifyProposal(verificationInput, { transactionId: typeof transactionId === 'string' ? transactionId : undefined })
+      : { status: 'REJECT', decision: 'NOT_VERIFIED', inspectStatus: 'EVIDENCE_INVALID', evidenceHash, proposalId: canonicalPayload.proposalId, reason: validation.reason || 'Live evidence validation failed.', verifiedAt: now };
     if (verificationResult.evidenceHash !== evidenceHash) {
-      verificationResult = { ...verificationResult, status: 'REJECT', decision: 'NOT_VERIFIED', reason: 'Server evidence hash does not match the GenLayer verdict hash.' };
+      verificationResult = { ...verificationResult, status: 'REJECT', decision: 'NOT_VERIFIED', inspectStatus: 'PAYLOAD_HASH_MISMATCH', reason: 'Server evidence hash does not match the GenLayer verdict hash.' };
     }
-    res.json({ success: true, canonicalPayload, evidenceHash, validation, verificationResult, simulationEligible: verificationResult.decision === 'VERIFIED' && verificationResult.status === 'ALLOW', executionEligible: false });
+    res.json({
+      success: verificationResult.decision === 'VERIFIED' && verificationResult.status === 'ALLOW',
+      inspectStatus: verificationResult.inspectStatus,
+      transactionId: verificationResult.transactionId,
+      protocolStatus: verificationResult.protocolStatus,
+      canonicalPayload,
+      evidenceHash,
+      validation,
+      verificationResult,
+      simulationEligible: verificationResult.decision === 'VERIFIED' && verificationResult.status === 'ALLOW',
+      executionEligible: false
+    });
   } catch {
-    res.status(503).json({ success: false, error: 'Live evidence acquisition failed; verification is blocked.' });
+    res.status(503).json({ success: false, inspectStatus: 'UNAVAILABLE', error: 'Live evidence acquisition failed; verification is blocked.' });
   }
 });
 

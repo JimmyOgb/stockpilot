@@ -240,8 +240,8 @@ export interface GenLayerRuleChecks {
 
 export interface GenLayerContractResponse {
   status: 'ALLOW' | 'REJECT';
-  finalized: boolean;
-  consensus_status: 'FINALIZED' | 'PENDING' | 'NO_MAJORITY' | 'ERROR';
+  finalized?: boolean;
+  consensus_status?: string;
   reason: string;
   evidence_hash: string;
   proposal_id: string;
@@ -251,6 +251,18 @@ export interface GenLayerContractResponse {
 export type VerificationStatus = 'ALLOW' | 'REJECT' | 'HALT';
 export type VerificationDecision = 'VERIFIED' | 'NOT_VERIFIED';
 
+export type VerificationInspectStatus =
+  | 'SUBMISSION_FAILED'
+  | 'CONSENSUS_PENDING'
+  | 'CONSENSUS_ACCEPTED_NOT_FINAL'
+  | 'CONSENSUS_FINALIZED'
+  | 'CONSENSUS_FINALIZED_EXECUTION_FAILED'
+  | 'NO_MAJORITY'
+  | 'PAYLOAD_HASH_MISMATCH'
+  | 'EVIDENCE_INVALID'
+  | 'VERIFIED'
+  | 'UNAVAILABLE';
+
 export interface VerificationResult {
   status: VerificationStatus;
   decision: VerificationDecision;
@@ -259,6 +271,9 @@ export interface VerificationResult {
   verifiedAt: number;
   proposalId?: string;
   checks?: GenLayerRuleChecks;
+  transactionId?: string;
+  protocolStatus?: string;
+  inspectStatus?: VerificationInspectStatus;
 }
 
 export interface GenLayerVerificationAuditRecord {
@@ -273,6 +288,9 @@ export interface GenLayerVerificationAuditRecord {
   verifiedAt: number;
   contractAddress: string;
   rpcUrl: string;
+  transactionId?: string;
+  protocolStatus?: string;
+  inspectStatus?: VerificationInspectStatus;
 }
 
 export type ExecutionState =

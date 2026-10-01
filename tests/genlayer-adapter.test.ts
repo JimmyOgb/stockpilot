@@ -2,8 +2,8 @@
  * StockPilot — Independent GenLayer Verification Adapter Unit Tests
  *
  * Tests the verification gate against strict fail-closed and independent consensus rules:
- * - Valid BUY proposal -> verified
- * - Valid SELL proposal -> verified
+ * - Valid BUY proposal -> verified via protocol write + consensus finality
+ * - Valid SELL proposal -> verified via protocol write + consensus finality
  * - NO_ACTION -> correctly handled
  * - Incorrect allocation -> rejected
  * - Incorrect trade direction -> rejected
@@ -22,26 +22,31 @@
  * - Immutable audit trail verification
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   GenLayerVerificationAdapter,
   buildCanonicalEvidencePayload,
   computeEvidenceHash,
-  validateEvidencePayload
+  canonicalizeJson,
+  validateEvidencePayload,
+  evaluateProtocolTransaction
 } from '../src/verification/genlayer-adapter.js';
 import {
   GenLayerVerificationInput,
   DEFAULT_MVP_STRATEGY_CONFIG,
-  PortfolioSnapshot
+  PortfolioSnapshot,
+  GenLayerRuleChecks
 } from '../src/types/index.js';
 
 describe('Independent GenLayer Verification Adapter', () => {
-  const dummyContractAddress = '0x1234567890123456789012345678901234567890';
+  const dummyContractAddress = '0x801A94870ecADe3Aedd0f8D070498Ad954b63841';
   const now = 1727250000000;
-  const completeChecks = {
+  const completeChecks: GenLayerRuleChecks = {
     freshness_passed: true, balance_verified: true, price_verified: true, spread_verified: true,
     market_state_verified: true, allocation_drift_valid: true, trade_direction_valid: true,
-    trade_amount_valid: true, risk_limits_passed: true
+    trade_amount_valid: true, risk_limits_passed: true, payload_valid: true, math_consistent: true,
+    direction_consistent: true, spread_permitted: true, circuit_breaker_passed: true,
+    market_state_permitted: true, non_zero_portfolio: true
   };
 
   // Base snapshot: 50 NVDAB ($10,000, 50%) + 10,000 USDC ($10,000, 50%) = $20,000 Total
@@ -188,6 +193,46 @@ describe('Independent GenLayer Verification Adapter', () => {
     }
   };
 
+  function createMockProtocolTx(
+    canonicalPayload: ReturnType<typeof buildCanonicalEvidencePayload>,
+    hash: string,
+    overrides: Record<string, unknown> = {}
+  ) {
+    const txHash = '0x' + 'b'.repeat(64);
+    return {
+      hash: txHash,
+      status: 7, // FINALIZED
+      statusName: 'FINALIZED',
+      result: 6, // MAJORITY_AGREE
+      result_name: 'MAJORITY_AGREE',
+      recipient: dummyContractAddress,
+      to_address: dummyContractAddress,
+      data: {
+        calldata: {
+          readable: JSON.stringify({
+            method: 'verify_proposal',
+            args: [canonicalizeJson(canonicalPayload), hash]
+          })
+        }
+      },
+      consensus_data: {
+        leader_receipt: [
+          {
+            execution_result: 'SUCCESS',
+            result: {
+              status: 'ALLOW',
+              reason: 'Proposal verified by GenLayer consensus.',
+              evidence_hash: hash,
+              proposal_id: canonicalPayload.proposalId,
+              checks: { ...completeChecks }
+            }
+          }
+        ]
+      },
+      ...overrides
+    };
+  }
+
   describe('1. Canonical Payload & Deterministic Evidence Hash', () => {
     it('produces identical SHA-256 evidence hash regardless of key insertion order', () => {
       const payload1 = buildCanonicalEvidencePayload(validBuyInput);
@@ -210,45 +255,24 @@ describe('Independent GenLayer Verification Adapter', () => {
     it('verifies a valid BUY_STOCK proposal when GenLayer returns ALLOW with matching hash', async () => {
       const canonicalPayload = buildCanonicalEvidencePayload(validBuyInput);
       const expectedHash = computeEvidenceHash(canonicalPayload);
+      const mockTx = createMockProtocolTx(canonicalPayload, expectedHash);
 
-      // Mock fetch simulating GenLayer consensus contract
-      const mockFetch: typeof fetch = async () => {
-        return new Response(
-          JSON.stringify({
-            jsonrpc: '2.0',
-            id: 1,
-            result: {
-              finalized: true,
-              consensus_status: 'FINALIZED',
-              status: 'ALLOW',
-              reason: 'Proposal verified by GenLayer consensus.',
-              evidence_hash: expectedHash,
-              proposal_id: canonicalPayload.proposalId,
-              checks: {
-                payload_valid: true,
-                math_consistent: true,
-                direction_consistent: true,
-                spread_permitted: true,
-                circuit_breaker_passed: true,
-                market_state_permitted: true,
-                non_zero_portfolio: true,
-                ...completeChecks
-              }
-            }
-          }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } }
-        );
+      const mockClient = {
+        writeContract: vi.fn(async () => mockTx.hash),
+        getTransaction: vi.fn(async () => mockTx)
       };
 
       const adapter = new GenLayerVerificationAdapter({
         verifierContractAddress: dummyContractAddress,
-        fetchFn: mockFetch
+        client: mockClient
       });
 
       const result = await adapter.verifyProposal(validBuyInput);
 
       expect(result.status).toBe('ALLOW');
       expect(result.decision).toBe('VERIFIED');
+      expect(result.inspectStatus).toBe('VERIFIED');
+      expect(result.protocolStatus).toBe('FINALIZED');
       expect(result.evidenceHash).toBe(expectedHash);
       expect(result.checks?.direction_consistent).toBe(true);
       expect(result.reason).toContain('Proposal verified');
@@ -257,38 +281,16 @@ describe('Independent GenLayer Verification Adapter', () => {
     it('verifies a valid SELL_STOCK proposal when GenLayer returns ALLOW with matching hash', async () => {
       const canonicalPayload = buildCanonicalEvidencePayload(validSellInput);
       const expectedHash = computeEvidenceHash(canonicalPayload);
+      const mockTx = createMockProtocolTx(canonicalPayload, expectedHash);
 
-      const mockFetch: typeof fetch = async () => {
-        return new Response(
-          JSON.stringify({
-            jsonrpc: '2.0',
-            id: 1,
-            result: {
-              finalized: true,
-              consensus_status: 'FINALIZED',
-              status: 'ALLOW',
-              reason: 'Proposal verified by GenLayer consensus.',
-              evidence_hash: expectedHash,
-              proposal_id: canonicalPayload.proposalId,
-              checks: {
-                payload_valid: true,
-                math_consistent: true,
-                direction_consistent: true,
-                spread_permitted: true,
-                circuit_breaker_passed: true,
-                market_state_permitted: true,
-                non_zero_portfolio: true,
-                ...completeChecks
-              }
-            }
-          }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } }
-        );
+      const mockClient = {
+        writeContract: vi.fn(async () => mockTx.hash),
+        getTransaction: vi.fn(async () => mockTx)
       };
 
       const adapter = new GenLayerVerificationAdapter({
         verifierContractAddress: dummyContractAddress,
-        fetchFn: mockFetch
+        client: mockClient
       });
 
       const result = await adapter.verifyProposal(validSellInput);
@@ -301,7 +303,6 @@ describe('Independent GenLayer Verification Adapter', () => {
 
   describe('3. NO_ACTION Verification', () => {
     it('verifies NO_ACTION when portfolio is within drift tolerance', async () => {
-      // 60% stock ($12,000) / 40% stable ($8,000) = $20,000 Total. Drift = 0 bps
       const balancedSnapshot: PortfolioSnapshot = {
         timestamp: now,
         stock: {
@@ -362,13 +363,32 @@ describe('Independent GenLayer Verification Adapter', () => {
       };
 
       const canonical = buildCanonicalEvidencePayload(noActionInput);
+      const hash = computeEvidenceHash(canonical);
+      const mockTx = createMockProtocolTx(canonical, hash, {
+        consensus_data: {
+          leader_receipt: [
+            {
+              execution_result: 'SUCCESS',
+              result: {
+                status: 'ALLOW',
+                reason: 'NO_ACTION verified',
+                evidence_hash: hash,
+                proposal_id: canonical.proposalId,
+                checks: { ...completeChecks }
+              }
+            }
+          ]
+        }
+      });
+
+      const mockClient = {
+        writeContract: vi.fn(async () => mockTx.hash),
+        getTransaction: vi.fn(async () => mockTx)
+      };
+
       const adapter = new GenLayerVerificationAdapter({
         verifierContractAddress: dummyContractAddress,
-        fetchFn: async () => new Response(JSON.stringify({ result: {
-          finalized: true, consensus_status: 'FINALIZED', status: 'ALLOW', reason: 'NO_ACTION verified',
-          evidence_hash: computeEvidenceHash(canonical), proposal_id: canonical.proposalId,
-          checks: { payload_valid: true, math_consistent: true, direction_consistent: true, spread_permitted: true, circuit_breaker_passed: true, market_state_permitted: true, non_zero_portfolio: true, ...completeChecks }
-        } }))
+        client: mockClient
       });
 
       const result = await adapter.verifyProposal(noActionInput);
@@ -401,7 +421,6 @@ describe('Independent GenLayer Verification Adapter', () => {
     });
 
     it('rejects proposal when proposed trade direction opposes portfolio drift', async () => {
-      // Underweight stock requires BUY_STOCK, but proposal specifies SELL_STOCK
       const wrongDirectionInput: GenLayerVerificationInput = {
         ...validBuyInput,
         proposal: {
@@ -558,109 +577,114 @@ describe('Independent GenLayer Verification Adapter', () => {
     });
   });
 
-  describe('8. Fail-Closed Error Handling & Malformed Responses', () => {
-    it('fails closed to NOT_VERIFIED when GenLayer responds with malformed JSON or invalid schema', async () => {
-      const mockFetch: typeof fetch = async () => {
-        return new Response(
-          JSON.stringify({
-            jsonrpc: '2.0',
-            id: 1,
-            result: 'INVALID_STRING_RESULT' // Malformed: should be object
-          }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } }
-        );
+  describe('8. Fail-Closed Protocol Finality & Malformed Responses', () => {
+    it('fails closed to NOT_VERIFIED when GenLayer responds with malformed result', async () => {
+      const canonicalPayload = buildCanonicalEvidencePayload(validBuyInput);
+      const expectedHash = computeEvidenceHash(canonicalPayload);
+      const malformedTx = createMockProtocolTx(canonicalPayload, expectedHash, {
+        consensus_data: { leader_receipt: [] } // Empty leader receipt
+      });
+
+      const mockClient = {
+        writeContract: vi.fn(async () => malformedTx.hash),
+        getTransaction: vi.fn(async () => malformedTx)
       };
 
       const adapter = new GenLayerVerificationAdapter({
         verifierContractAddress: dummyContractAddress,
-        fetchFn: mockFetch
+        client: mockClient
       });
 
       const result = await adapter.verifyProposal(validBuyInput);
 
       expect(result.status).toBe('REJECT');
       expect(result.decision).toBe('NOT_VERIFIED');
-      expect(result.reason).toContain('Malformed GenLayer response');
+      expect(result.inspectStatus).toBe('CONSENSUS_FINALIZED_EXECUTION_FAILED');
     });
 
     it('fails closed when response evidence hash does not match canonical payload hash (tamper check)', async () => {
-      const mockFetch: typeof fetch = async () => {
-        return new Response(
-          JSON.stringify({
-            jsonrpc: '2.0',
-            id: 1,
-            result: {
-              finalized: true,
-              consensus_status: 'FINALIZED',
-              status: 'ALLOW',
-              evidence_hash: '0x0000000000000000000000000000000000000000000000000000000000000000' // Tampered!
+      const canonicalPayload = buildCanonicalEvidencePayload(validBuyInput);
+      const expectedHash = computeEvidenceHash(canonicalPayload);
+      const tamperedTx = createMockProtocolTx(canonicalPayload, expectedHash, {
+        consensus_data: {
+          leader_receipt: [
+            {
+              execution_result: 'SUCCESS',
+              result: {
+                status: 'ALLOW',
+                evidence_hash: '0x0000000000000000000000000000000000000000000000000000000000000000', // Tampered!
+                proposal_id: canonicalPayload.proposalId,
+                checks: { ...completeChecks }
+              }
             }
-          }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } }
-        );
+          ]
+        }
+      });
+
+      const mockClient = {
+        writeContract: vi.fn(async () => tamperedTx.hash),
+        getTransaction: vi.fn(async () => tamperedTx)
       };
 
       const adapter = new GenLayerVerificationAdapter({
         verifierContractAddress: dummyContractAddress,
-        fetchFn: mockFetch
+        client: mockClient
       });
 
       const result = await adapter.verifyProposal(validBuyInput);
 
       expect(result.status).toBe('REJECT');
       expect(result.decision).toBe('NOT_VERIFIED');
-      expect(result.reason).toContain('Tampered evidence hash');
+      expect(result.inspectStatus).toBe('PAYLOAD_HASH_MISMATCH');
+      expect(result.reason).toContain('Rule H violation');
     });
 
-    it('fails closed when GenLayer returns RPC error (e.g. consensus timeout or NO_MAJORITY)', async () => {
-      const mockFetch: typeof fetch = async () => {
-        return new Response(
-          JSON.stringify({
-            jsonrpc: '2.0',
-            id: 1,
-            error: {
-              code: -32000,
-              message: 'Consensus undetermined: NO_MAJORITY'
-            }
-          }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } }
-        );
+    it('fails closed when write transaction submission fails', async () => {
+      const mockClient = {
+        writeContract: vi.fn(async () => {
+          throw new Error('Consensus write rejected by RPC');
+        }),
+        getTransaction: vi.fn()
       };
 
       const adapter = new GenLayerVerificationAdapter({
         verifierContractAddress: dummyContractAddress,
-        fetchFn: mockFetch
+        client: mockClient
       });
 
       const result = await adapter.verifyProposal(validBuyInput);
 
       expect(result.status).toBe('REJECT');
       expect(result.decision).toBe('NOT_VERIFIED');
-      expect(result.reason).toContain('GenLayer RPC error');
+      expect(result.inspectStatus).toBe('SUBMISSION_FAILED');
+      expect(result.reason).toContain('write transaction submission failed');
     });
 
-    it('fails closed on network timeout or abort', async () => {
-      const hangingFetch: typeof fetch = async (_url, init) => {
-        return new Promise((_, reject) => {
-          if (init?.signal) {
-            init.signal.addEventListener('abort', () => {
-              reject(new Error('The operation was aborted due to timeout'));
-            });
-          }
-        });
+    it('fails closed on network timeout when transaction remains pending', async () => {
+      const canonicalPayload = buildCanonicalEvidencePayload(validBuyInput);
+      const pendingTx = createMockProtocolTx(canonicalPayload, '0x1', {
+        status: 1,
+        statusName: 'PENDING'
+      });
+
+      const mockClient = {
+        writeContract: vi.fn(async () => pendingTx.hash),
+        getTransaction: vi.fn(async () => pendingTx)
       };
 
       const adapter = new GenLayerVerificationAdapter({
         verifierContractAddress: dummyContractAddress,
-        timeoutMs: 50,
-        fetchFn: hangingFetch
+        timeoutMs: 30,
+        pollIntervalMs: 10,
+        client: mockClient
       });
 
-      const result = await adapter.verifyProposal(validBuyInput);
+      const result = await adapter.verifyProposal(validBuyInput, { maxWaitMs: 30, pollIntervalMs: 10 });
 
       expect(result.status).toBe('REJECT');
       expect(result.decision).toBe('NOT_VERIFIED');
-      expect(result.reason).toContain('timed out');
+      expect(result.inspectStatus).toBe('CONSENSUS_PENDING');
+      expect(result.reason).toContain('PENDING');
     });
 
     it('fails closed when verifier contract address is unconfigured or zero-address', async () => {
@@ -678,29 +702,31 @@ describe('Independent GenLayer Verification Adapter', () => {
     it('correctly reports NOT_VERIFIED when GenLayer validator consensus rejects the proposal', async () => {
       const canonicalPayload = buildCanonicalEvidencePayload(validBuyInput);
       const expectedHash = computeEvidenceHash(canonicalPayload);
-
-      const mockFetch: typeof fetch = async () => {
-        return new Response(
-          JSON.stringify({
-            jsonrpc: '2.0',
-            id: 1,
-            result: {
-              finalized: true,
-              consensus_status: 'FINALIZED',
-              status: 'REJECT',
-              reason: 'Validator consensus rejected: spread exceeds custom dynamic oracle boundary.',
-              evidence_hash: expectedHash,
-              proposal_id: canonicalPayload.proposalId,
-              checks: { payload_valid: true, math_consistent: true, direction_consistent: true, spread_permitted: true, circuit_breaker_passed: true, market_state_permitted: true, non_zero_portfolio: true, ...completeChecks }
+      const rejectedTx = createMockProtocolTx(canonicalPayload, expectedHash, {
+        consensus_data: {
+          leader_receipt: [
+            {
+              execution_result: 'SUCCESS',
+              result: {
+                status: 'REJECT',
+                reason: 'Validator consensus rejected: spread exceeds custom dynamic oracle boundary.',
+                evidence_hash: expectedHash,
+                proposal_id: canonicalPayload.proposalId,
+                checks: { ...completeChecks }
+              }
             }
-          }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } }
-        );
+          ]
+        }
+      });
+
+      const mockClient = {
+        writeContract: vi.fn(async () => rejectedTx.hash),
+        getTransaction: vi.fn(async () => rejectedTx)
       };
 
       const adapter = new GenLayerVerificationAdapter({
         verifierContractAddress: dummyContractAddress,
-        fetchFn: mockFetch
+        client: mockClient
       });
 
       const result = await adapter.verifyProposal(validBuyInput);
@@ -715,29 +741,16 @@ describe('Independent GenLayer Verification Adapter', () => {
     it('persists complete audit entries without exposing private keys or secrets', async () => {
       const canonicalPayload = buildCanonicalEvidencePayload(validBuyInput);
       const expectedHash = computeEvidenceHash(canonicalPayload);
+      const mockTx = createMockProtocolTx(canonicalPayload, expectedHash);
 
-      const mockFetch: typeof fetch = async () => {
-        return new Response(
-          JSON.stringify({
-            jsonrpc: '2.0',
-            id: 1,
-            result: {
-              finalized: true,
-              consensus_status: 'FINALIZED',
-              status: 'ALLOW',
-              reason: 'Proposal verified by GenLayer consensus.',
-              evidence_hash: expectedHash,
-              proposal_id: canonicalPayload.proposalId,
-              checks: { payload_valid: true, math_consistent: true, direction_consistent: true, spread_permitted: true, circuit_breaker_passed: true, market_state_permitted: true, non_zero_portfolio: true, ...completeChecks }
-            }
-          }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } }
-        );
+      const mockClient = {
+        writeContract: vi.fn(async () => mockTx.hash),
+        getTransaction: vi.fn(async () => mockTx)
       };
 
       const adapter = new GenLayerVerificationAdapter({
         verifierContractAddress: dummyContractAddress,
-        fetchFn: mockFetch
+        client: mockClient
       });
 
       await adapter.verifyProposal(validBuyInput);
@@ -752,6 +765,8 @@ describe('Independent GenLayer Verification Adapter', () => {
       expect(record.decision).toBe('VERIFIED');
       expect(record.canonicalPayload.stockSymbol).toBe('NVDAB');
       expect(record.canonicalPayload.targetStockWeightBps).toBe(6000);
+      expect(record.transactionId).toBe(mockTx.hash);
+      expect(record.protocolStatus).toBe('FINALIZED');
 
       // Verify no secrets leaked in audit record
       const serialized = JSON.stringify(record);
